@@ -1,0 +1,321 @@
+---
+title: "DADA2 pipeline of Navalacruz 2021 dataset sampling"
+author: "Amara Santiesteban Serrano"
+date: " r format(Sys.time(), '%d %B, %Y') "
+output: 
+  html_document:
+    df_print: paged
+    pdf_document: default
+    word_document: default
+  editor_options:
+    chunk_output_type: inline
+---
+
+```{r Packages}
+#install.packages("pacman")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "R.utils", "Biostrings", "ShortRead")
+```
+
+The *DADA (Divisive Amplicon Denoising Algorithm)* is a model-based approach for correcting amplicon errors without constructing OTUs. It identifies fine-scale variation.*The output of DADA2 is always ASV* --> trabajar con ASVs tiene sentido principalmente cuando queremos "afinar" al nivel de cepas
+--> *DADA2* is the open-source R package that allows researchers to accurately reconstruct amplicon-sequenced communities at the highest resolution.
+
+################################  CONCEPT  NOTE     #######################################################
+*OTU* = Operational Taxonomic Unit (se basa en agrupar sequencias entorno a un umbral basado en similitud y definido por un marcador molecular o barcode. Va a depender de la resolución taxonómica que estemos buscando, ej.: 95% para género y 97% para especie)
+*ASV* = Amplicon sequence variant (¡representan variantes genéticas únicas! Incluso distinguen entre secuencias que varian entre ellas por un solo nucleótido). 
+###########################################################################################################
+
+```{r DADA2 install}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("dada2", version = "3.19")
+
+library(dada2)
+```
+
+-*OUR DATA*-
+· The pool was sequenced in a fraction of a NovaSeq PE250 flow cell (Illumina) aiming for a total output of 10 gigabases.
+  --> 10 gigabases = 10^10 bp
+· We have *Illumina paired-end* data (DADA2 was created specifically for this kind of data even though it works with other sequencing techniques). Our amplifying platform is *NovaSeq PE250*: this means PAIR END of 250 bp --> 250 forward and 250 reverse.
+· The *amplicon* we used is the ITS (primers used were ITS1f and ITS2) --> *ITS is an hyper variable region* from 80 pb to 800 pb... (*SIZE POLYMORFISM*). In ~AllGenetics~ they said they amplified an ITS region of around 265 pb. 
+· Finished libraries were pooled in equimolar amounts according to the results of a Qubit dsDNA HS Assay (Thermo Fisher Scientific) quantification.
+· ~AllGenetics~ removed all adapter dimers from the Raw data using #Cutadapt v3.5 
+
+  ######################### How can we know this sequencing depth is enough for us? ###########################
+  
+  We asked for 10^10 pb --> Illumina Novaseq PE250 aims for reads of 250 pb so 10^10/250 = 4x10^7 --> but these reads are paired-end so   (4x10^7)/2 = 2x10^7 --> if we have 80 samples, theoretically we would have (2x10^7)/80 = 250000 pairs per sample
+  
+  If we wanted to sequence a whole genome with this sequencing depth: 
+  Size of a whole genome (for example) = 35x10^8 pb --> (10^10)/(35x10^8) = 2.85 reads, so this means the whole genome would only be     completely sequenced 2.85 times which is totally insufficient to have a security on the sequencing
+  
+  #############################################################################################################
+  
+```{r Identification of primers}
+
+# 1) Unzip fastq files
+#tgz_file <- "Bioinformatic_analysis/Raw_data.tgz"
+#untar(tgz_file) ##unzip
+
+# 2) Select the sequences of the project you want to work with:
+# Define the path to the unzipped "Raw_data" folder
+path_raw_data <- "Raw_data"  
+# List the files in the "Raw_data" folder that contain the word "FIREFUNGI"
+firefungi_files <- list.files(path_raw_data, pattern = "FIREFUNGI", full.names = TRUE)
+# Define the destination folder for the "FIREFUNGI" files
+destination_folder <- "Raw_data_firefungi_soil"
+# Create the destination folder if it doesn't exist
+if (!dir.exists(destination_folder)) {
+  dir.create(destination_folder)}
+# Move the files to the destination folder
+file.copy(firefungi_files, destination_folder, overwrite = TRUE)
+
+path_firefungi <- "Raw_data_firefungi_soil" # CHANGE ME to the directory containing the fastq files after unzipping.
+list.files(path_firefungi)
+
+# Read in the names of the fastq files, and perform some string manipulation to get matched lists of the forward and reverse fastq files. 
+fnFs <- sort(list.files(path_firefungi, pattern="_R1_001.fastq.gz", full.names = TRUE))
+fnRs <- sort(list.files(path_firefungi, pattern="_R2_001.fastq.gz", full.names = TRUE))
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+
+# Identify primers:
+FWD <- "CTTGGTCATTTAGAGGAAGTAA"  
+REV <- "GCTGCGTTCTTCATCGATGC"
+
+#Verification of the presence and orientation of these primers in the data: 
+allOrients <- function(primer) {
+    # Create all orientations of the input sequence
+    require(Biostrings)
+    dna <- DNAString(primer)  # The Biostrings works w/ DNAString objects rather than character vectors   
+    orients <- c(Forward = dna, Complement = Biostrings::complement(dna), Reverse = Biostrings::reverse(dna),
+        RevComp = Biostrings::reverseComplement(dna))
+    return(sapply(orients, toString))  # Convert back to character vector
+}
+FWD.orients <- allOrients(FWD)
+REV.orients <- allOrients(REV)
+FWD.orients
+
+#The presence of ambiguous bases (Ns) in the sequencing reads makes accurate mapping of short primer sequences difficult. Next we are going to “pre-filter” the sequences just to remove those with Ns, but perform no other filtering.
+fnFs.filtN <- file.path(path_firefungi, "filtN", basename(fnFs)) # Put N-filtered files in filtN/ subdirectory
+fnRs.filtN <- file.path(path_firefungi, "filtN", basename(fnRs))
+Filtered <- dada2::filterAndTrim(fnFs, fnFs.filtN, fnRs, fnRs.filtN, maxN = 0, multithread = FALSE) #multithread = TRUE --> this is only for UBUNTU or LINUX so the computer would run it in different threads
+Filtered
+str(Filtered)
+#write.table(Filtered, "Filtered_Ns.txt") # Hacemos estos pasos para sacar un documento txt con las secuencias input iniciales y las output después del filtrado de N (añadir que en los resultados solamente vendrá reflejado los reads de la secuencia forward, por lo que consideramos que es número de reads por pair sequences, es decir, Fwd-Rvs).
+
+#The length variation of the ITS region has significant consequences for the filtering and trimming steps of the standard DADA2 workflow: one of them is that primers can be found within the reads in some cases. We are now ready to count the number of times the primers appear in the forward and reverse read, while considering all possible primer orientations. Identifying and counting the primers on one set of paired end FASTQ files is sufficient, assuming all the files were created using the same library preparation, so we’ll just process the first sample:
+primerHits <- function(primer, fn) {
+    # Counts number of reads in which the primer is found
+    nhits <- Biostrings::vcountPattern(primer, ShortRead::sread(ShortRead::readFastq(fn)), fixed = FALSE)
+    return(sum(nhits > 0))
+}
+rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs.filtN[[1]]), FWD.ReverseReads = sapply(FWD.orients,
+    primerHits, fn = fnRs.filtN[[1]]), REV.ForwardReads = sapply(REV.orients, primerHits,
+    fn = fnFs.filtN[[1]]), REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs.filtN[[1]]))
+```
+
+```{r Primers removal - Cutadapt}
+
+## Cutadapt was developed for Linux so we need to do some adjustments to implement it in Windows: 
+## 1) Download the Cutadapt .exe from the web: https://github.com/marcelm/cutadapt/releases
+## 2) Put the .exe in the folder you need 
+library(ShortRead); packageVersion("ShortRead")
+# Set up pathway to cutadapt (primer trimming tool) and test
+cutadapt <- ("cutadapt.exe")
+system2(cutadapt, args = "--version") # 4.0
+
+#Remove primers with cutadapt and assess the output
+# Create directory to hold the output from cutadapt
+trimmed.d <- "Raw_data_firefungi_soil/output_cutadapt"
+
+fnFs.cut <- file.path(trimmed.d, basename(fnFs))
+fnRs.cut <- file.path(trimmed.d, basename(fnRs))
+
+# Save the reverse complements of the primers to variables
+FWD.RC <- dada2:::rc(FWD)
+REV.RC <- dada2:::rc(REV)
+
+##  Create the cutadapt flags ##
+# Trim FWD and the reverse-complement of REV off of R1 (forward reads)
+R1.flags <- paste("-g", FWD, "-a", REV.RC, "--minimum-length 50")
+# Trim REV and the reverse-complement of FWD off of R2 (reverse reads)
+R2.flags <- paste("-G", REV, "-A", FWD.RC, "--minimum-length 50")
+
+# Run Cutadapt
+for (i in seq_along(fnFs)) {
+  system2(cutadapt, args = c(R1.flags, R2.flags, "-n", 2, #"--revcomp", # -n 2 required to remove FWD and REV from reads
+                             "-o", fnFs.cut[i], "-p", fnRs.cut[i], # output files
+                             fnFs.filtN[i], fnRs.filtN[i])) # input files
+}
+
+ # As a sanity check, we will check for primers in the first cutadapt-ed sample:
+## should all be zero!
+rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs.cut[[1]]),
+      FWD.ReverseReads = sapply(FWD.orients, primerHits, fn = fnRs.cut[[1]]),
+      REV.ForwardReads = sapply(REV.orients, primerHits, fn = fnFs.cut[[1]]),
+      REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs.cut[[1]]))
+#Success! Primers are no longer detected in the cutadapted reads.
+
+#The primer-free sequence files are now ready to be analyzed through the DADA2 pipeline. Similar to the earlier steps of reading in FASTQ files, we read in the names of the cutadapt-ed FASTQ files and applying some string manipulation to get the matched lists of forward and reverse fastq files.
+
+# Forward and reverse fastq filenames have the format:
+cutFs <- sort(list.files(trimmed.d, pattern = "_R1_001.fastq.gz", full.names = TRUE))
+cutRs <- sort(list.files(trimmed.d, pattern = "_R2_001.fastq.gz", full.names = TRUE))
+
+# Extract sample names, assuming filenames have format:
+get.sample.name <- function(fname) strsplit(basename(fname), "_")[[1]][1]
+sample.names <- unname(sapply(cutFs, get.sample.name))
+head(sample.names)
+```
+
+```{r DADA2}
+#Visualization --> the green line is the average quality score
+dada2::plotQualityProfile(cutFs[c(1:2)]) #Change these numbers to see different samples
+#Qp + theme(
+#   strip.text = element_text(size = 4.5))  
+#ggsave("qualityplotsF.png")
+
+#Filter and trim
+# Place filtered files in filtered/ subdirectory (TO PLACE OUTPUT FROM NEXT STEP)
+filtFs <- file.path(trimmed.d, "filtered", basename(cutFs))
+filtRs <- file.path(trimmed.d, "filtered", basename(cutRs))
+
+                  ################ The next steps can take several minutes ##################
+
+out <- dada2::filterAndTrim(cutFs, filtFs, cutRs, filtRs, maxN = 0, maxEE = c(2, 2), truncQ = 2,
+                     #cutFs = first input (forward); filtFs = were do we want the output
+                     #cutRs = second input (reverse); filtRs = were do we want the output
+                     ######### we leave truncLen out when working with ITS since it is an hyper variable region
+                     #maxN = reads with ambiguous pairs allowed
+                     #maxEE = maximum amount of estimated errors
+       minLen = 50, rm.phix = TRUE, compress = TRUE, multithread = FALSE)  # on windows, set multithread = FALSE
+head(out)
+#write.table(out, "out.txt") 
+
+#Error rates for each possible nucleotide transition --> it creates an error model that will be used downstream in the hardcore of the DADA2 algorithm
+errF <- dada2::learnErrors(filtFs, multithread=FALSE)
+errR <- dada2::learnErrors(filtRs, multithread=FALSE)
+dada2::plotErrors(errF, nominalQ=TRUE)
+dada2::plotErrors(errR, nominalQ=TRUE)
+
+#Sample Inference --> the hardcore of the DADA2 algorithm
+dadaFs <- dada2::dada(filtFs, err = errF, multithread = FALSE)
+dadaRs <- dada2::dada(filtRs, err = errR, multithread = FALSE)
+
+#Merge pair reads:
+#We now merge the forward and reverse reads together to obtain the full denoised sequences. Merging is performed by aligning the denoised forward reads with the reverse-complement of the corresponding denoised reverse reads, and then constructing the merged “contig” sequences. By default, merged sequences are only output if the forward and reverse reads overlap 
+mergers <- dada2::mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+# Inspect the merger data.frame from the first sample
+View(mergers[[1]])
+
+#Construct sequence table:
+seqtab <- dada2::makeSequenceTable(mergers)
+dim(seqtab)
+# Inspect distribution of sequence lengths
+seq_lenght <- table(nchar(dada2::getSequences(seqtab))) #upper numbers = seq length, numbers below = nº of seqs with that length
+
+#Remove chimeras:
+seqtab.nochim <- dada2::removeBimeraDenovo(seqtab, method="consensus", multithread=FALSE, verbose=TRUE)
+#write.csv(seqtab.nochim, file = "seqtab.nochim.csv", row.names = TRUE)
+dim(seqtab.nochim)
+sum(seqtab.nochim)/sum(seqtab)
+```
+
+```{r Tracking}
+# summary of samples in out by percentage
+out %>%
+  data.frame() %>%
+  dplyr::mutate(Samples = rownames(.),
+         percent_kept = 100*(reads.out/reads.in)) %>%
+  dplyr::select(Samples, everything()) %>%
+  summarise(min_remaining = paste0(round(min(percent_kept), 2), "%"),
+            median_remaining = paste0(round(median(percent_kept), 2), "%"),
+            mean_remaining = paste0(round(mean(percent_kept), 2), "%"),
+            max_remaining = paste0(round(max(percent_kept), 2), "%"))
+
+#Number of sequences with unidentifyed nucleotides: 
+Filt_N <- dada2::filterAndTrim(fnFs.cutN, fnFs.filtN, fnRs.cutN, fnRs.filtN, maxN = 0, multithread = FALSE, verbose = FALSE)
+#write.table(Filtrado, "Filtrado_Ns.txt")
+
+#As a final check of our progress, we’ll look at the number of reads that made it through each step in the pipeline:
+getN <- function(x) sum(dada2::getUniques(x))
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
+# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+rownames(track) <- sample.names
+head(track)
+#write.csv(track, "track.csv", row.names = TRUE)
+
+track <- as.data.frame(track)
+totals <- track %>%
+  dplyr::summarise(across(everything(), list(sum = sum, mean = mean, sd = sd)))
+totals
+```
+
+```{r Assign taxonomy}
+#The assignTaxonomy function takes as input a set of sequences to be classified, and a training set of reference sequences with known taxonomy, and outputs taxonomic assignments with at least minBoot bootstrap confidence.
+#The database we are using in this case is **UNITE 2022**: https://unite.ut.ee/repository.php --> this is critical because depending on which database we use and even the version, it can drastically change our results.
+
+# Assign taxonomy                 ###### ATENTION: HIGH COMPUTATIONAL EFFORT ######
+                                   ### MORE THAN 1 DAY OF COMPUTING IN WINDOWS ###
+
+taxa <- dada2::assignTaxonomy(seqtab.nochim, "sh_general_release_dynamic_s_all_25.07.2023.fasta", minBoot = 80, multithread=FALSE) #My default DADA2 considers a 50% Boostrap threshold, but we wanted to try with a higher one (minBoot = 80%))
+#We could also set the minBoot to 0 --> this will give us a boostrap value per ASV so we can interpret and filter ourselves
+
+#write.csv(taxa, file = "taxa_10_07_2024.csv", row.names = TRUE)
+
+#Let’s inspect the taxonomic assignments:
+taxa.print <- taxa # Removing sequence rownames for display only
+rownames(taxa.print) <- NULL
+head(taxa.print)
+```
+
+*Bootstrap* --> para asignación taxonómica, independientemente de los organismos con los que estemos tratando. Coge un "trocito" de secuencia (subsecuencia o K-mer) de un determinado número de pares de bases (8 pb en este caso) que se van a repetir muchas veces. Estas secuencias se van a comparar con la base de datos en cuestión (UNITE en este caso) y si más de un 80% de las subsecuencias se pegan a un mismo taxón, el algoritmo asignará la secuencia madre a este taxón.
+
+Nuestro output en este punto es todo lo que necesitamos para analizar nuestro set de datos. No obstante, trabajar con toda la secuencia de nucleótidos es más difícil además de más costoso a nivel del procesado de datos. Por esta razón, vamos a sustituir las largas secuencia por un nombre tal como *"ASV_"*:
+
+```{r replace sequences with ASV}
+
+output_folder <- "Raw_data_firefungi_soil/dada2_output_soil/"
+
+#transposed table and replace sequences with ASV (ASV_table.csv)
+#Extracted sequences and ASVs to make a fasta file (asv_OTU.fasta)
+
+asv_seqs <- colnames(seqtab.nochim)
+asv_headers <- vector(dim(seqtab.nochim)[2], mode="character")
+
+#fasta header as ASV_
+for (i in 1:dim(seqtab.nochim)[2]) {
+  asv_headers[i] <- paste(">ASV", i, sep="_")
+}
+
+#ASV sequences
+asv_fasta <- c(rbind(asv_headers, asv_seqs))
+View(asv_fasta)
+
+#ASV abundance
+asv_table <- t(seqtab.nochim)
+head(seqtab.nochim)
+row.names(asv_table) <- sub(">", "", asv_headers)
+
+#ASV taxonomy
+asv_tax <- taxa
+row.names(asv_tax) <- sub(">", "", asv_headers)
+
+#merging abundance and tax table
+OTU_TAX_table <- merge(asv_table, asv_tax, by=0)
+OTU_TAX_table
+
+#defining output paths within the new folder
+asv_fasta_file <- paste0(output_folder, "asv_OTU.fasta")
+asv_table_file <- paste0(output_folder, "asv_table.csv")
+asv_tax_file <- paste0(output_folder, "asv_tax.csv")
+OTU_TAX_table_file <- paste0(output_folder, "OTU_TAX_table.csv")
+
+#writing out output files
+write.table(asv_fasta, asv_fasta_file, sep=",", quote=F, col.names=FALSE,row.names = FALSE)
+write.table(asv_table, asv_table_file, sep=",", quote=F, col.names = NA)
+write.table(asv_tax, asv_tax_file, sep=",", quote=F, col.names=NA)
+write.table(OTU_TAX_table, OTU_TAX_table_file, sep=",", quote=F, col.names=NA)
+```
+
+DADA2 tiene sentido para afinar a nivel de ASV, es una máquina súper potente. Pero para trabajar con OTUs podríamos usar algoritmos menos profundos como VSEARCH. Pero usamos DADA2 porque está de moda...
