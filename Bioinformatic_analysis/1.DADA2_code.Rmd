@@ -10,7 +10,7 @@ output:
   editor_options:
     chunk_output_type: inline
 ---
-
+#hola
 ```{r Packages}
 #install.packages("pacman")
 pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "R.utils", "Biostrings", "ShortRead")
