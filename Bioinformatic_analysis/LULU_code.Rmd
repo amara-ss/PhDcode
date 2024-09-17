@@ -1,0 +1,143 @@
+---
+title: "LULU pipeline of Navalacruz 2021 dataset sampling"
+author: "Amara Santiesteban Serrano"
+date: " r format(Sys.time(), '%d %B, %Y') "
+output: 
+  html_document:
+    df_print: paged
+    pdf_document: default
+    word_document: default
+  editor_options:
+    chunk_output_type: inline
+---
+
+*Paso intermedio entre DADA2 y el análisis de los datos en phyloseq*
+
+```{r Packages}
+#install.packages("pacman")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom")
+```
+
+The *LULU algorithm* is a post-clustering curation method aiming at removing erroneous OTUs to achieve meaningful diversity metrics (e.g.: reduce overestimated species richness).
+## Here we will work with ASV as OTUs.
+
+El fundamento, lo que va a "buscar", son los duplicados de PCR (mutación durante el proceso de amplificación)--> no tanto para las variaciones reales que tengan las secuencias en la realidad sino para la variación generada por el proceso de amplificar. Los tres pilares de LULU son: 
+
+*Similitud*: Va a buscar secuencias similares en un 97%
+*Co-ocurrencia*: para que se le asignen las secuencias hijas a una secuencia madre, la secuencia madre tiene que estar presente
+*Abundancia*: la secuencia madre siempre tiene que ser más abundante que las secuencias hijas
+
+```{r LULU install}
+library(devtools)
+#install_github("tobiasgf/lulu")  
+```
+
+```{r load OTU table}
+#The requirements of LULU are that the OTU table has samples as columns and OTUs as rows, and that it has unique OTU id's as row names.
+
+OTU_table <- read.table("F:/asv_table.csv",sep=',', row.names = 1)
+colnames(OTU_table) <- OTU_table[1, ]
+OTU_table <- OTU_table[-1, ]
+OTU_table[] <- lapply(OTU_table, as.numeric) #We need all the values as numbers, no <chr<
+head(OTU_table)
+class(OTU_table)
+```
+
+```{r produce a match list}
+#This step requires a Linux processing. 
+#There are different tools such as BLASTn or VSEARCH (see the LULU github for more). The only requirements is that the match list has three columns with pair wise similarity scores for the OTUs. The first column contains the id of the query OTU, the second column contains the id of the matching OTU, and the third column contains the similarity score (%) of the two OTUs.
+
+## Download **Anaconda**
+## Open the Anaconda Navigator --> Open the **Powershell Prompt**
+## Type: ls --> This will identify the directory 
+
+# VSEARCH: 
+# 1) Download the zip file for Windows: https://github.com/torognes/vsearch/releases/download/v2.28.1/vsearch-2.28.1-win-x86_64.zip
+# 2) Unzip the file --> find the .exe in the bin folder --> move the .exe to the identified directory
+# 3) Type in the Powershell Prompt (replacing "asv_OTU.fasta" for your file name, which should be placed in the SAME DIRECTORY): ./vsearch --usearch_global asv_OTU.fasta --db asv_OTU.fasta --self --id .84 --iddef 1 --userout match_list.txt -userfields query+target+id --maxaccepts 0 --query_cov .9 --maxhits 10 
+# 4) The match list should be in the identified directory (.txt file)
+
+matchlist <- read.table("C:/Users/amara.santiesteban/match_list.txt")
+```
+
+```{r LULU curation}
+curated_result <- lulu::lulu(OTU_table, matchlist)
+
+output_folder <- "C:/Users/amara.santiesteban/OneDrive - UAM/Escritorio/FPI_INIA/ADN/Firefungi_2021/Raw_data_firefungi_soil/dada2_output_soil/"
+
+#The curated OTU table
+curated_asv_table <- curated_result$curated_table
+names(curated_asv_table)
+curated_result_file <- paste0(output_folder, "curated_result.csv")
+write.table(curated_asv_table, curated_result_file, sep=",", quote=F, col.names=NA)
+
+#The original table
+curated_result$original_table
+#Number of OTUs retained
+curated_result$curated_count
+#IDs of OTUs retained (list only first)
+length(curated_result$curated_otus)
+#number of OTUs discarded
+curated_result$discarded_count
+#IDs of OTUs discarded (list only first)
+head(curated_result$discarded_otus)
+
+#Check the computational time
+curated_result$runtime
+#Check which setting was used for minimum_match
+curated_result$minimum_match
+#Check which setting was used for minimum_relative_cooccurence
+curated_result$minimum_relative_cooccurence
+
+### Check how the OTUs were mapped
+#total - total read count
+#spread - the number of samples the OTU is present in
+#parent_id - ID of OTU with which this OTU was merged (or self)
+#curated - ("parent" or "merged"), was this OTU kept as a valid OTU (parent) or merged with another
+#rank - The rank of the OTU in terms of decreasing spread and read count
+otu_map <- (curated_result$otu_map)
+```
+
+```{r Assing taxonomy}
+#For the next step, we need that our taxonomy table matches the curated asv table. To that end, we need to cut out the taxonomy table to only the asv present in the curated table: 
+
+taxa2 <- read.table("F:/asv_tax.csv",sep=',', row.names = 1)
+colnames(taxa2) <- taxa2[1, ]
+taxa2 <- taxa2[-1, ]
+
+common_asv <- intersect(row.names(curated_asv_table), row.names(taxa2))
+common_asv
+curated_asv_table <- as.matrix(curated_asv_table[common_asv, ])
+taxa <- as.matrix(taxa2[common_asv, ])
+```
+
+The *LULU function also produces a log file* (named something like lulu.log_20171113_162157) which will be placed in the working directory.
+For each OTU processed, the log file contains:
+
+1) A list of all hits, i.e. other OTUs with a sequence similarity above the selected threshold) in the dataset is listed, and
+2) all potential parents, i.e. hits with a lower rank number, i.e. higher spread and total read count, and satisfying the selected ratio of read counts, and
+3) relative co-occurence of all parents (until a parent satisfying the minimum relative cooccurence (and min avg abundance) thresholds is met, if one such is present), and
+4) min avg abundance of parents satisfying minimum relative co-occurence, and
+5) information whether the OTU was found to have a parent or not ("No parent found!" or "SETTING XXX to be an ERROR of YYY")
+
+###############################################################################################
+
+In our lab (Aponte's) we have decided to run this step after the LULU curation but many other researchers run it before as well... Our reasoning is that LULU debugs chimeras while the post-clustering groups ASV based on a similarity threshold. LULU reduces the number of ASVs resulting from DADA2 and then the post-clustering makes a more tight reduction. 
+
+```{r 97% post-clustering}
+#VSEARCH for post-clustering: to produce the matchlist we used VSEARCH through Anaconda but we can do it also in the pc prompt (Símbolo de Sistema):
+# 1) Download the zip file for Windows: https://github.com/torognes/vsearch/releases/download/v2.28.1/vsearch-2.28.1-win-x86_64.zip
+# 2) Unzip the file --> find the .exe in the bin folder
+# 3) Go to the pc prompt and set folder containing the vsearch exe as the directory: C:\Users\amara.santiesteban> cd "C:\Users\amara.santiesteban\vsearch-2.28.1-win-x86_64 (1)\vsearch-2.28.1-win-x86_64\bin"
+# 4) Type in the prompt (replacing "asv_OTU.fasta" for your file name, which should be placed in the SAME DIRECTORY): vsearch.exe --cluster_size asv_OTU.fasta --uc cluster_results.txt --id 0.97 --centroids centroids.fasta
+# 5) The output cluster results .txt should be in the same folder
+
+###############################################################################################
+# In order to do this, first we need to generate a .fasta of our CURATED RESULT after LULU: 
+
+
+```
+
+
+After this we need to run FUNGuild/Fungal Traits
+
