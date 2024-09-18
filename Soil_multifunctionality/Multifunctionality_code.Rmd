@@ -39,11 +39,15 @@ ggcorr(vars_cor, method = c("everything", "pearson"))
 #ggsave("vars_cor.png")
 ```
 
-```{r Descriptive table of variables}
+```{r Descriptive table of numeric variables}
+dataset$ID <- as.character(dataset$ID)
+dataset$PLOT <- as.character(dataset$PLOT)
+dataset$SITE <- as.character(dataset$SITE)
+
 descrip <- function(dataset) {
   result <- dataset %>%
     dplyr::group_by(TRAT2, DEPTH) %>%
-    dplyr::summarize(across(11:90, list(
+    dplyr::summarize(across(where(is.numeric), list(
       mean = ~mean(.),
       se = ~sd(.) / sqrt(n())
     ), .names = "{col}_{fn}"))
@@ -65,38 +69,44 @@ cols <- c("#41b6c4","#fd8d3c","#cb181d","#800026")
 ```
 
 ```{r PCA - plot characterizarion }
-pca_burn_sev <- prcomp(dataset[,c(11,19:29)], scale=T)
-summary(pca_burn_sev)
+#Variables considered in this analysis are plot slope, canopy cover percentages, ground cover percentages and depth of the organic layer (both charred and non-charred):
 
-pc1_loadings <- pca_burn_sev$rotation[,1]
+plot_vars <- c("Slope_per","Organic_layer_mean_depth_cm", "Charred_organic_layer_mean_cm", "Green_per", "Brown_per", "Consumed_per", "Grass_per", "Old_litter_per", "New_litter_per", "Mineral_per", "Ash_per", "Stone_per")
+  
+pca_sev <- prcomp(dataset[,plot_vars], scale=T)
+summary(pca_sev)
+
+pc1_loadings <- pca_sev$rotation[,1]
 sorted_loadings <- abs(pc1_loadings)[order(abs(pc1_loadings), decreasing = TRUE)]
 print(sorted_loadings)
 
+# Plot customization
+dataset$TRAT2 <- ordered(dataset$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
 
-pca_whole_plot <- fviz_pca_biplot(pca_burn_sev,
+pca_whole_plot <- fviz_pca_biplot(pca_sev,
                 geom.var = c("arrow","text"),
-                mean.point=F, #Elimina centroides
+                mean.point=F, #No centroids
                 label = "var",
                 col.var = "#696969", alpha.var=0.3,
                 pointsize = 4, alpha.ind = 0.5, 
-                col.ind = Firefungi$TRAT2, shape.ind="21",
-                palette = cols_3,
+                col.ind = dataset$TRAT2, shape.ind="21",
+                palette = cols,
                 repel = TRUE,
                 ggtheme = theme_base())
 #ggsave("pca_whole_plot_editar.png")
 
-summary(pca_burn_sev) 
-pc1 <- pca_burn_sev$x[,1] 
+summary(pca_sev) 
+pc1 <- pca_sev$x[,1] 
 pc1 <- as.data.frame(pc1)
 #write.csv(pc1, file = "pc1.csv")
 
 
 ## PCA by depths
-pca_burn_sev_top <- prcomp(dataset_topsoil[,c(11,19:29)], scale=T)
-pc1_top <- pca_burn_sev_top$x[,1] 
+pca_sev_top <- prcomp(dataset_topsoil[,c(11,19:29)], scale=T)
+pc1_top <- pca_sev_top$x[,1] 
 
-pca_burn_sev_sub <- prcomp(dataset_subsoil[,c(11,19:29)], scale=T)
-pc1_sub <- pca_burn_sev_sub$x[,1]
+pca_sev_sub <- prcomp(dataset_subsoil[,c(11,19:29)], scale=T)
+pc1_sub <- pca_sev_sub$x[,1]
 ```
 
 ```{r Exploratory analysis of vars}
@@ -864,5 +874,14 @@ ecosystem_functions %>%
             sv = sd(Soil_health_normalized_zscore),
             se = sd(Soil_health_normalized_zscore) / sqrt(n()),  
            )
+```
+
+```{r Package and functions references}
+sessionInfo()
+
+citation("stats")
+citation("factoextra")
+
+
 ```
 
