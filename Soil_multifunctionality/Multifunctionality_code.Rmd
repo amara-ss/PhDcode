@@ -83,17 +83,20 @@ print(sorted_loadings)
 # Plot customization
 dataset$TRAT2 <- ordered(dataset$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
 
-pca_whole_plot <- fviz_pca_biplot(pca_sev,
+pca_plot <- fviz_pca_biplot(pca_sev,
                 geom.var = c("arrow","text"),
                 mean.point=F, #No centroids
                 label = "var",
                 col.var = "#696969", alpha.var=0.3,
-                pointsize = 4, alpha.ind = 0.5, 
+                pointsize = 6, alpha.ind = 0.5, 
+                pointshape=23,
                 col.ind = dataset$TRAT2, shape.ind="21",
                 palette = cols,
                 repel = TRUE,
+                addEllipses=TRUE,
+                ellipse.type="confidence",
                 ggtheme = theme_base())
-#ggsave("pca_whole_plot_editar.png")
+#ggsave("pca_plot.png")
 
 summary(pca_sev) 
 pc1 <- pca_sev$x[,1] 
