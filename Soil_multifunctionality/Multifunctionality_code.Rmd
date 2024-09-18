@@ -13,10 +13,9 @@ output:
 
 ```{r Packages}
 #install.packages("pacman")
-pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "vegan", "hrbrthemes", "indicspecies")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "vegan", "hrbrthemes", "indicspecies", "GGally")
 
-library(GGally)
-#remotes::install_github("ricardo-bion/ggradar")
+remotes::install_github("ricardo-bion/ggradar")
 library(ggradar)
 ```
 
