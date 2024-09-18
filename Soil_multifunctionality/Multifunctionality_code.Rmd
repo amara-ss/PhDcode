@@ -20,50 +20,52 @@ library(ggradar)
 ```
 
 ```{r Read data}
-Firefungi <- read_xlsx(paste0(dir,"/0_FireFungi_MyDataset_copia.xlsx"))
-Firefungi$TRAT2 <- ordered(Firefungi$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+dataset <- Firefungi_soil_dataset_2021
 
-Firefungi <- Firefungi %>% 
+# Unit transformation
+dataset <- dataset %>% 
   mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
          Ergosterol_µg_g = Ergosterol_ng_g_105/1000,
          C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
 
-Firefungi_topsoil <- Firefungi %>%  filter(DEPTH=="topsoil")
-Firefungi_subsoil <- Firefungi %>% filter(DEPTH=="subsoil")
+# Subset by depth
+dataset_topsoil <- dataset %>%  filter(DEPTH=="topsoil")
+dataset_subsoil <- dataset %>% filter(DEPTH=="subsoil")
 ```
 
 ```{r Correlation Matrix}
-vars_cor <- Firefungi[,c(31:51)]
+vars_cor <- dataset[,c(31:51)]
 ggcorr(vars_cor, method = c("everything", "pearson"))
 #ggsave("vars_cor.png")
 ```
 
-```{r Descriptive table of vars}
-descrip <- function(Firefungi) {
-  result <- Firefungi %>%
-    group_by(TRAT2, DEPTH) %>%
-    summarize(across(11:89, list(
+```{r Descriptive table of variables}
+descrip <- function(dataset) {
+  result <- dataset %>%
+    dplyr::group_by(TRAT2, DEPTH) %>%
+    dplyr::summarize(across(11:90, list(
       mean = ~mean(.),
       se = ~sd(.) / sqrt(n())
     ), .names = "{col}_{fn}"))
 
   return(result)
 }
-descrip <- descrip(Firefungi)
+descrip <- descrip(dataset)
+```
 
-Firefungi %>%
+```{r}
+dataset %>%
   dplyr::group_by(TRAT2, DEPTH) %>%
   summarise(mean = mean(C_N_ratio),
             se = sd(C_N_ratio)/sqrt(n()))
 ```
 
 ```{r Colors}
-cols_3 <- c("#41b6c4","#fd8d3c","#cb181d","#800026")
-#41ab5d
+cols <- c("#41b6c4","#fd8d3c","#cb181d","#800026")
 ```
 
-```{r PCA with plot characterizarion vars}
-pca_burn_sev <- prcomp(Firefungi[,c(11,19:29)], scale=T)
+```{r PCA - plot characterizarion }
+pca_burn_sev <- prcomp(dataset[,c(11,19:29)], scale=T)
 summary(pca_burn_sev)
 
 pc1_loadings <- pca_burn_sev$rotation[,1]
@@ -89,11 +91,11 @@ pc1 <- as.data.frame(pc1)
 #write.csv(pc1, file = "pc1.csv")
 
 
-## PCA devided by depths
-pca_burn_sev_top <- prcomp(Firefungi_topsoil[,c(11,19:29)], scale=T)
+## PCA by depths
+pca_burn_sev_top <- prcomp(dataset_topsoil[,c(11,19:29)], scale=T)
 pc1_top <- pca_burn_sev_top$x[,1] 
 
-pca_burn_sev_sub <- prcomp(Firefungi_subsoil[,c(11,19:29)], scale=T)
+pca_burn_sev_sub <- prcomp(dataset_subsoil[,c(11,19:29)], scale=T)
 pc1_sub <- pca_burn_sev_sub$x[,1]
 ```
 
