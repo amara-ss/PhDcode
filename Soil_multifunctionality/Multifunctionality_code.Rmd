@@ -97,10 +97,11 @@ pca_plot <- fviz_pca_biplot(pca_sev,
                 ellipse.alpha = 0.4,
                 ellipse.size=3,
                 ggtheme = theme_base()) +
-  xlab("PC1 (40.4%)") + # Change X-axis title
+  scale_x_reverse()+ #We want a fire severity gradient from UB -> HS
+  xlab("PC1 (40.4%)") + 
   ylab("PC2 (23%)") 
-#ggsave("pca_plot.png")
-
+ggsave("/Soil_multifunctionality/output/pca_plot.png")
+pca_plot
 summary(pca_sev) 
 pc1 <- pca_sev$x[,1] 
 pc1 <- as.data.frame(pc1)
@@ -249,21 +250,6 @@ cld <- multcompLetters4(lm_f, Tuckeys)
 print(cld) 
 ```
 
-```{r Multifunctionality index: dataset preparation}
-multifunc_vars <- names(dataset) %>% 
-  intersect(c("pH", "EC", "Bulk_density_g_cm3", "C_N_ratio","A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", "NH4_mgL_105",
-              "NO3_mgL_105", "Ergosterol_µg_g", "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha", "Nitrogen_stock_Mg_ha", 
-              "SOM_per_corregido", "MBC_mg_kg_105", "Nematode_g_105", "Ca_g_kg", "K_g_kg",
-              "Mg_g_kg", "Na_g_kg", "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105"))
-
-Firefungi_simple <- dataset %>%
-  dplyr::select(ID, TRAT2, DEPTH, all_of(multifunc_vars))
-
-#Add pc1 values to the dataframe
-Firefungi_simple <- Firefungi_simple %>%
-  dplyr::mutate(pc1 = pc1$pc1)
-```
-
 ```{r Soil functions }
 # 1) Define the variables
 my_vars <- names(Firefungi_simple) %>% 
@@ -328,23 +314,38 @@ cld <- multcompLetters4(lm_f, Tuckeys)
 print(cld) 
 ```
 
+```{r Multifunctionality index: dataset preparation}
+multifunc_vars <- names(dataset) %>% 
+  intersect(c("pH", "EC", "Bulk_density_g_cm3", "C_N_ratio","A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", "NH4_mgL_105",
+              "NO3_mgL_105", "Ergosterol_µg_g", "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha", "Nitrogen_stock_Mg_ha", 
+              "SOM_per_corregido", "MBC_mg_kg_105", "Nematode_g_105", "Ca_g_kg", "K_g_kg",
+              "Mg_g_kg", "Na_g_kg", "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105"))
+
+Firefungi_simple <- dataset %>%
+  dplyr::select(ID, TRAT2, DEPTH, all_of(multifunc_vars))
+
+#Add pc1 values to the dataframe
+Firefungi_simple <- Firefungi_simple %>%
+  dplyr::mutate(pc1 = pc1$pc1)
+```
+
 ```{r Multifunctionality: calculated as Byrnes et al. 2022}
 #In this first step we transform four indicators (Heavy Metals) for which lower values mean higher functionality
 asduffy <- Firefungi_simple %>%
-  dplyr::select(pc1, ID, TRAT2, DEPTH, all_of(selected_vars)) %>%
+  dplyr::select(pc1, ID, TRAT2, DEPTH, all_of(multifunc_vars)) %>%
   dplyr::mutate(Al_g_kg = -1*Al_g_kg + max(Al_g_kg, na.rm=T),
                 Fe_g_Kg = -1*Fe_g_Kg + max(Fe_g_Kg, na.rm=T),
                 Zn_mg_Kg_105 = -1*Zn_mg_Kg_105 + max(Zn_mg_Kg_105, na.rm=T),
                 Cu_mg_Kg_105 = -1*Cu_mg_Kg_105 + max(Cu_mg_Kg_105, na.rm=T))
 
 asduffy <- asduffy %>%
-  cbind(getStdAndMeanFunctions(asduffy, selected_vars)) 
+  cbind(getStdAndMeanFunctions(asduffy, multifunc_vars)) 
 
 asduffy <-asduffy %>%
-  getFuncsMaxed(selected_vars,
+  getFuncsMaxed(multifunc_vars,
                 threshmin=0.8, threshmax=0.8)
 
-duffyAllVars.std <- paste0(selected_vars, ".std")
+duffyAllVars.std <- paste0(multifunc_vars, ".std")
 
 #now effective number of functions
 asduffy <- asduffy %>%
@@ -382,7 +383,7 @@ asduffy %>%
   stat_smooth(method = "lm", color = "#969696", alpha=0.2) +
   stat_summary(fun.data = mean_se, size=1, shape=19, alpha=0.7) +
   #geom_point(size = 4, shape = 21, color = "white", alpha=0.8) +  # Set color for the point borders
-  scale_color_manual(values = cols_3) +
+  scale_color_manual(values = cols) +
   facet_wrap(~DEPTH, ncol = 2, scales = "fixed") +
   theme_minimal()+
   theme(
@@ -399,7 +400,7 @@ asduffy %>%
 #ggsave("mult_asbyrnes3.png")
 ```
 
-```{r}
+```{r Clean multifunctionality dataframe}
 clean_multifunc <- asduffy %>%
   dplyr::select(pc1, ID, TRAT2, DEPTH, meanFunction, thresholds, nFunc, funcMaxed, mf_eff_1)
 
@@ -410,7 +411,7 @@ clean_multifunc %>%
 ```
 
 ```{r}
-merged_data <- ecosystem_functions %>%
+merged_data <- soil_functions %>%
   left_join(clean_multifunc[,9, drop = FALSE], by =c("TRAT2", "DEPTH")) 
 ```
 
