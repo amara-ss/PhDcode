@@ -252,7 +252,7 @@ cld <- multcompLetters4(lm_f, Tuckeys)
 print(cld) 
 ```
 
-```{r Soil functions }
+```{r Grouping into soil functions }
 # 1) Define the variables
 my_vars <- names(Firefungi_simple) %>% 
   intersect(c("pH", "EC", "Bulk_density_g_cm3", 
@@ -596,10 +596,10 @@ Firefungi_simple %>%
 
 ```{r Vertical distribution of soil}
 #Calculation of the difference among depths
-depth_dif <- Firefungi %>%
-  dplyr::select(SITE, TRAT2, DEPTH, all_of(selected_vars)) %>%
+depth_dif <- dataset %>%
+  dplyr::select(SITE, TRAT2, DEPTH, all_of(multifunc_vars)) %>%
   group_by(SITE, TRAT2) %>%
-  summarize(across(all_of(selected_vars), 
+  dplyr::summarize(across(all_of(multifunc_vars), 
                    ~ mean(.[DEPTH == "topsoil"]) - mean(.[DEPTH == "subsoil"]),
                    .names = "{.col}_difference"))
 
@@ -632,7 +632,7 @@ depth_dif %>%
   ggplot(aes(x = TRAT2, y = value,
              fill = TRAT2), color="black") +
   geom_bar(stat="identity", alpha=0.7, color=NA) +
-  scale_fill_manual(values = cols_3)+
+  scale_fill_manual(values = cols)+
   facet_wrap(vars(forcats::fct_relevel(name, "pH_difference", "A_phosphorus_ppm_105_difference", 
                                        "NO3_mgL_105_difference", "EC_difference", 
                                        "Phosphatase_activity_µmol_g_h_difference", "Ergosterol_µg_g_difference", 
@@ -895,6 +895,7 @@ citation("stats")
 citation("factoextra")
 citation("lme4")
 citation("emmeans")
+citation("scales")
 
 ```
 
