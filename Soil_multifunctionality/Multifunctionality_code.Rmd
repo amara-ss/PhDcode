@@ -15,7 +15,7 @@ output:
 #install.packages("pacman")
 pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "vegan", "hrbrthemes", "indicspecies", "GGally")
 
-remotes::install_github("ricardo-bion/ggradar")
+#remotes::install_github("ricardo-bion/ggradar")
 library(ggradar)
 ```
 
@@ -82,27 +82,29 @@ print(sorted_loadings)
 
 # Plot customization
 dataset$TRAT2 <- ordered(dataset$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
-
 pca_plot <- fviz_pca_biplot(pca_sev,
                 geom.var = c("arrow","text"),
                 mean.point=F, #No centroids
                 label = "var",
                 col.var = "#696969", alpha.var=0.3,
-                pointsize = 6, alpha.ind = 0.5, 
-                pointshape=23,
+                pointsize = 6, alpha.ind = 0.2, 
+                pointshape=16,
                 col.ind = dataset$TRAT2, shape.ind="21",
                 palette = cols,
                 repel = TRUE,
                 addEllipses=TRUE,
                 ellipse.type="confidence",
-                ggtheme = theme_base())
+                ellipse.alpha = 0.4,
+                ellipse.size=3,
+                ggtheme = theme_base()) +
+  xlab("PC1 (40.4%)") + # Change X-axis title
+  ylab("PC2 (23%)") 
 #ggsave("pca_plot.png")
 
 summary(pca_sev) 
 pc1 <- pca_sev$x[,1] 
 pc1 <- as.data.frame(pc1)
 #write.csv(pc1, file = "pc1.csv")
-
 
 ## PCA by depths
 pca_sev_top <- prcomp(dataset_topsoil[,c(11,19:29)], scale=T)
@@ -113,14 +115,14 @@ pc1_sub <- pca_sev_sub$x[,1]
 ```
 
 ```{r Exploratory analysis of vars}
-var <- Firefungi$C_N_ratio
-var_log <- (log(Firefungi$C_N_ratio)+1)
+var <- dataset$C_N_ratio
+var_log <- (log(dataset$C_N_ratio)+1)
 
 #### Visually assessment of data ####
 
 hist(var_log) 
 
-Firefungi %>%
+dataset %>%
   ggplot(aes(x=TRAT2, y=var, fill=DEPTH)) +
   geom_boxplot(outlier.color = "red",
     outlier.shape = 8) +
@@ -136,11 +138,11 @@ Firefungi %>%
 #### FIRST!! We define the Contrast table we want to work with
 options(contrasts=c(factor="contr.sum", ordered="contr.poly"))
 ##############################################################
-mixed.var <- lmer(var_log ~ TRAT2*DEPTH + (1|SITE), data = Firefungi)
-mixed.null <- lmer(var ~ (1|SITE), data = Firefungi)
+mixed.var <- lmer(var_log ~ TRAT2*DEPTH + (1|SITE), data = dataset)
+mixed.null <- lmer(var ~ (1|SITE), data = dataset)
 anova(mixed.var)
 summary(mixed.var)
-
+?lmer
 plot(mixed.var)
 
 par(mfrow=c(1,3))
@@ -158,14 +160,14 @@ multcomp::cld(emmeans(mixed.var, ~TRAT2*DEPTH, type="response"), Letters=letters
 ```
 
 ```{r Linear Mixed Models by depth: TOPSOIL}
-var_top <- Firefungi_topsoil$SOM_per_corregido
-var_log_top <- (log(Firefungi_topsoil$C_N_ratio)+1)
+var_top <- dataset_topsoil$SOM_per_corregido
+var_log_top <- (log(dataset_topsoil$C_N_ratio)+1)
 
 hist(var_log_top)
 
 ## PC1 as fixed effect
 
-mixed.pc1_top <- lmer(var_top ~ pc1_top + (1|SITE), data = Firefungi_topsoil)
+mixed.pc1_top <- lmer(var_top ~ pc1_top + (1|SITE), data = dataset_topsoil)
 
 car::Anova(mixed.pc1_top, test.statistic="F", type=3)
 AICc(mixed.pc1_top)
@@ -178,7 +180,7 @@ par(mfrow=c(1,1))
 
 ## TRAT2 as fixed effect
 
-mixed.TRAT2_05 <- lmer(var_log_top ~ TRAT2 + (1|SITE), data = Firefungi_topsoil)
+mixed.TRAT2_05 <- lmer(var_log_top ~ TRAT2 + (1|SITE), data = dataset_topsoil)
 
 par(mfrow=c(1,3))
 qqnorm(resid(mixed.TRAT2_05)); qqline(resid(mixed.TRAT2_05))
@@ -194,14 +196,14 @@ multcomp::cld(emmeans(mixed.TRAT2_05, ~TRAT2, type="response"), Letters=letters)
 ```
 
 ```{r Linear Mixed Models by depth: SUBSOIL}
-var_sub <- Firefungi_subsoil$SOM_per_corregido
-var_log_sub <- (log(Firefungi_subsoil$C_N_ratio)+1)
+var_sub <- dataset_subsoil$SOM_per_corregido
+var_log_sub <- (log(dataset_subsoil$C_N_ratio)+1)
 
 hist(var_log_sub)
 
 ## PC1 as fixed effect
 
-mixed.pc1_sub <- lmer(var_log_sub ~ pc1_sub + (1|SITE), data = Firefungi_subsoil)
+mixed.pc1_sub <- lmer(var_log_sub ~ pc1_sub + (1|SITE), data = dataset_subsoil)
 
 car::Anova(mixed.pc1_sub, test.statistic="F", type=3)
 AICc(mixed.pc1_sub)
@@ -214,7 +216,7 @@ par(mfrow=c(1,1))
 
 ## TRAT2 as fixed effect
 
-mixed.TRAT2_510 <- lmer(var_log_sub ~ TRAT2 + (1|SITE), data = Firefungi_subsoil)
+mixed.TRAT2_510 <- lmer(var_log_sub ~ TRAT2 + (1|SITE), data = dataset_subsoil)
 
 par(mfrow=c(1,3))
 qqnorm(resid(mixed.TRAT2_510)); qqline(resid(mixed.TRAT2_510))
@@ -229,7 +231,7 @@ multcomp::cld(emmeans(mixed.TRAT2_510, ~TRAT2, type="response"), Letters=letters
 ```
 
 ```{r t-test HS1 vs HS2}
-subset_data <- Firefungi_ %>%
+subset_data <- dataset %>%
   filter(TRAT2 %in% c("HS1", "HS2"))
 
 var <- subset_data$A_phosphorus_ppm_105
@@ -247,33 +249,37 @@ cld <- multcompLetters4(lm_f, Tuckeys)
 print(cld) 
 ```
 
-```{r Multifunctionality: dataset preparation}
-selected_vars <- names(Firefungi) %>% 
+```{r Multifunctionality index: dataset preparation}
+multifunc_vars <- names(dataset) %>% 
   intersect(c("pH", "EC", "Bulk_density_g_cm3", "C_N_ratio","A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", "NH4_mgL_105",
               "NO3_mgL_105", "Ergosterol_µg_g", "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha", "Nitrogen_stock_Mg_ha", 
               "SOM_per_corregido", "MBC_mg_kg_105", "Nematode_g_105", "Ca_g_kg", "K_g_kg",
               "Mg_g_kg", "Na_g_kg", "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105"))
 
-Firefungi_simple <- Firefungi %>%
-  dplyr::select(ID, TRAT2, DEPTH, all_of(selected_vars))
+Firefungi_simple <- dataset %>%
+  dplyr::select(ID, TRAT2, DEPTH, all_of(multifunc_vars))
 
 #Add pc1 values to the dataframe
 Firefungi_simple <- Firefungi_simple %>%
   dplyr::mutate(pc1 = pc1$pc1)
 ```
 
-```{r Multifunctionality: Grouping into soil functions}
+```{r Soil functions }
+# 1) Define the variables
 my_vars <- names(Firefungi_simple) %>% 
-  intersect(c("pH", "EC", "Bulk_density_g_cm3", "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", "NH4_mgL_105",
-              "NO3_mgL_105", "Ergosterol_µg_g", "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
-              "SOM_per_corregido", "MBC_mg_kg_105", "Nematode_g_105", "Ca_g_kg", "K_g_kg",
-              "Mg_g_kg", "Na_g_kg", "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105"))
-
+  intersect(c("pH", "EC", "Bulk_density_g_cm3", 
+              "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", 
+              "NH4_mgL_105","NO3_mgL_105", "Ergosterol_µg_g", "Ntotal_g_100g_105", 
+              "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
+              "SOM_per_corregido", "MBC_mg_kg_105", "Nematode_g_105", 
+              "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", "Al_g_kg", "Fe_g_Kg",
+              "Zn_mg_Kg_105", "Cu_mg_Kg_105"))
+# 2) Normalization of variables
 trial <- Firefungi_simple %>%
   mutate(across(all_of(my_vars),           
                 ~ rescale(., to=c(0,1)),            
                 .names = "{.col}_standardized"))
-
+# 3) Create the 6 "soil function" categories: Soil_properties, Nutrient_pools, Soil_carbon, Soil_activity, Heavy_metals,Soil_biota:
 aver_mul2 <- trial %>%
   group_by(TRAT2, DEPTH) %>%
   mutate(Soil_properties = mean(c(pH_standardized, EC_standardized, Bulk_density_g_cm3_standardized)),
@@ -283,14 +289,14 @@ aver_mul2 <- trial %>%
          Heavy_metals = mean(c(Al_g_kg_standardized, Cu_mg_Kg_105_standardized, Fe_g_Kg_standardized,Zn_mg_Kg_105_standardized)),
          Soil_biota = mean(c(Nematode_g_105_standardized, Ergosterol_µg_g_standardized))) %>%
   ungroup()
-
-ecosystem_functions <- aver_mul2 %>%
+# 4) Dataframe of the defined soil functions and their mean value: 
+soil_functions <- aver_mul2 %>%
   dplyr::select(TRAT2, DEPTH, Soil_properties, Nutrient_pools, Soil_carbon, Soil_activity, Heavy_metals, Soil_biota) 
-
-EF <- names(ecosystem_functions) %>% 
+# 5) Define the functions:
+EF <- names(soil_functions) %>% 
   intersect(c("Soil_properties", "Nutrient_pools", "Soil_carbon", "Soil_activity", "Heavy_metals", "Soil_biota"))
-
-ecosystem_functions %>%
+# 6) Plot visualization: 
+soil_functions %>%
   dplyr::select(TRAT2, DEPTH, all_of(EF)) %>%
   pivot_longer(all_of(EF), names_to = "Variable", values_to = "Value") %>%
   ggplot(aes(x = TRAT2, y = Value, fill = DEPTH)) +
@@ -310,9 +316,9 @@ ecosystem_functions %>%
 #ggsave("soil_functions_whole.png")
 
 ##### Linear models
-var_func <- ecosystem_functions$Heavy_metals
+var_func <- soil_functions$Heavy_metals
 
-lm_f <- aov(var_func ~ TRAT2, data = ecosystem_functions)
+lm_f <- aov(var_func ~ TRAT2, data = soil_functions)
 summary(lm_f)
 anova(lm_f)
 Tuckeys<- TukeyHSD(lm_f)
@@ -884,7 +890,8 @@ sessionInfo()
 
 citation("stats")
 citation("factoextra")
-
+citation("lme4")
+citation("emmeans")
 
 ```
 
