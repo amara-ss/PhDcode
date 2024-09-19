@@ -1,4 +1,8 @@
-.tgz
+Raw_data.tgz
+Raw_data/
+Raw_data_firefungi_soil
+output_cutadapt/
+cutadapt.exe
 
 # History files
 .Rhistory

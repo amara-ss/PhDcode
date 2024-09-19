@@ -10,6 +10,7 @@ output:
   editor_options:
     chunk_output_type: inline
 ---
+############### SET THE CURRENT FOLDER AS WORKING DIRECTORY
 
 ```{r Packages}
 #install.packages("pacman")
@@ -52,19 +53,20 @@ library(dada2)
 ```{r Identification of primers}
 
 # 1) Unzip fastq files
-#tgz_file <- "Bioinformatic_analysis/Raw_data.tgz"
-#untar(tgz_file) ##unzip
+tgz_file <- "Raw_data.tgz"
+untar(tgz_file) ##unzip
 
 # 2) Select the sequences of the project you want to work with:
 # Define the path to the unzipped "Raw_data" folder
 path_raw_data <- "Raw_data"  
 # List the files in the "Raw_data" folder that contain the word "FIREFUNGI"
 firefungi_files <- list.files(path_raw_data, pattern = "FIREFUNGI", full.names = TRUE)
+
 # Define the destination folder for the "FIREFUNGI" files
-destination_folder <- "Raw_data_firefungi_soil"
+destination_folder <-("Raw_data_firefungi_soil") 
 # Create the destination folder if it doesn't exist
 if (!dir.exists(destination_folder)) {
-  dir.create(destination_folder)}
+  dir.create(destination_folder, recursive = TRUE)}
 # Move the files to the destination folder
 file.copy(firefungi_files, destination_folder, overwrite = TRUE)
 
@@ -125,7 +127,10 @@ system2(cutadapt, args = "--version") # 4.0
 
 #Remove primers with cutadapt and assess the output
 # Create directory to hold the output from cutadapt
-trimmed.d <- "Raw_data_firefungi_soil/output_cutadapt"
+trimmed.d <- ("output_cutadapt")
+# Create the destination folder if it doesn't exist
+if (!dir.exists(trimmed.d)) {
+  dir.create(trimmed.d, recursive = TRUE)}
 
 fnFs.cut <- file.path(trimmed.d, basename(fnFs))
 fnRs.cut <- file.path(trimmed.d, basename(fnRs))
