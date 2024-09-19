@@ -85,7 +85,7 @@ dataset$TRAT2 <- ordered(dataset$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
 pca_plot <- fviz_pca_biplot(pca_sev,
                 geom.var = c("arrow","text"),
                 mean.point=F, #No centroids
-                label = "var",
+                label = "none",
                 col.var = "#696969", alpha.var=0.3,
                 pointsize = 6, alpha.ind = 0.2, 
                 pointshape=16,
@@ -97,10 +97,12 @@ pca_plot <- fviz_pca_biplot(pca_sev,
                 ellipse.alpha = 0.4,
                 ellipse.size=3,
                 ggtheme = theme_base()) +
+  theme(legend.position = "none") +
   scale_x_reverse()+ #We want a fire severity gradient from UB -> HS
   xlab("PC1 (40.4%)") + 
   ylab("PC2 (23%)") 
-ggsave("/Soil_multifunctionality/output/pca_plot.png")
+#ggsave("output/pca_plot2.png")
+
 pca_plot
 summary(pca_sev) 
 pc1 <- pca_sev$x[,1] 
