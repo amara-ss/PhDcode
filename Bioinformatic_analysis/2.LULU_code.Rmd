@@ -29,7 +29,7 @@ El fundamento, lo que va a "buscar", son los duplicados de PCR (mutación durant
 
 ```{r LULU install}
 library(devtools)
-#install_github("tobiasgf/lulu")  
+install_github("tobiasgf/lulu")  
 ```
 
 ```{r load OTU table}
@@ -57,18 +57,18 @@ class(OTU_table)
 # 3) Type in the Powershell Prompt (replacing "asv_OTU.fasta" for your file name, which should be placed in the SAME DIRECTORY): ./vsearch --usearch_global asv_OTU.fasta --db asv_OTU.fasta --self --id .84 --iddef 1 --userout match_list.txt -userfields query+target+id --maxaccepts 0 --query_cov .9 --maxhits 10 
 # 4) The match list should be in the identified directory (.txt file)
 
-matchlist <- read.table("C:/Users/amara.santiesteban/match_list.txt")
+matchlist <- read.table("match_list.txt")
 ```
 
 ```{r LULU curation}
 curated_result <- lulu::lulu(OTU_table, matchlist)
 
-output_folder <- "C:/Users/amara.santiesteban/OneDrive - UAM/Escritorio/FPI_INIA/ADN/Firefungi_2021/Raw_data_firefungi_soil/dada2_output_soil/"
+output_folder <- "Raw_data_firefungi_soil/dada2_output"
 
 #The curated OTU table
 curated_asv_table <- curated_result$curated_table
 names(curated_asv_table)
-curated_result_file <- paste0(output_folder, "curated_result.csv")
+curated_result_file <- file.path(output_folder, "curated_result.csv")
 write.table(curated_asv_table, curated_result_file, sep=",", quote=F, col.names=NA)
 
 #The original table
@@ -132,12 +132,70 @@ In our lab (Aponte's) we have decided to run this step after the LULU curation b
 # 4) Type in the prompt (replacing "asv_OTU.fasta" for your file name, which should be placed in the SAME DIRECTORY): vsearch.exe --cluster_size asv_OTU.fasta --uc cluster_results.txt --id 0.97 --centroids centroids.fasta
 # 5) The output cluster results .txt should be in the same folder
 
+      ### --cluster_size asv_OTU.fasta: This option tells vsearch to cluster the sequences based on their sizes. 
+      ### --id 0.97: This sets the similarity threshold for clustering to 97%. Sequences that are 97% similar or more will be clustered together. 
+      
 ###############################################################################################
 # In order to do this, first we need to generate a .fasta of our CURATED RESULT after LULU: 
+library(Biostrings)
 
+# We have the following objects:
+# 1. OTU_table: Original OTU table used in LULU.
+# 2. curated_result: Output from the lulu() function.
+# 3. seqs: Named vector of sequences, where names correspond to OTU IDs (output from DADA2)
 
+# Get the refined OTU IDs from the LULU output
+curated_otu_ids <- rownames(curated_result$curated_table)
+
+# Extract the sequences from the seqtab.nochim object (DADA2 output)
+asv_seqs <- colnames(seqtab.nochim)
+asv_headers <- vector(dim(seqtab.nochim)[2], mode="character")
+for (i in 1:dim(seqtab.nochim)[2]) {
+  asv_headers[i] <- paste("ASV", i, sep="_")
+}
+
+# Create a named vector of sequences
+seqs <- setNames(asv_seqs, asv_headers)
+
+# Extract the sequences corresponding to the curated OTUs
+curated_seqs <- seqs[curated_otu_ids]
+
+# Convert to DNAStringSet
+curated_DNAStringSet <- DNAStringSet(curated_seqs) #An object that contains the curated sequences ready to be written to a FASTA file.
+
+# Write to a FASTA file
+writeXStringSet(curated_DNAStringSet, "Raw_data_firefungi_soil/curated_FASTA.fasta", width = 99999) #adjusting the width will make sure that each sequence is written on a single line. By default, the writeXStringSet() function wraps sequences to 80 characters per line in the output FASTA file.
 ```
 
+################################################## VSEARCH OUTPUT #####################################################
+
+Reading file curated_FASTA.fasta 100%
+1117998 nt in 4397 seqs, min 80, max 445, avg 254
+Masking 100%
+Sorting by abundance 100%
+Counting k-mers 100%
+Clustering 100%
+Sorting clusters 100%
+Writing clusters 100%
+*Clusters: 2855* Size min 1, max 14, avg 1.5
+Singletons: 2022, 46.0% of seqs, 70.8% of clusters
+
+```{r VSEARCH result}
+#After running VSEARCH with the cluster_size and the centroids functions, we will find 2 outputs in the same folder: the cluster_results.txt and the centroids.fasta. 
+
+    ### cluster_results.txt: C=centroids (reference sequence to create the cluster), H= hits; other sequences assigned to the cluster, S= singletones.
+    ### centroids.fasta: This FASTA file contains the centroid sequences, which are the representative sequences for each cluster. These centroids are chosen based on the similarity threshold (97% in this case).
+
+clustered_asv.fasta <- readDNAStringSet("F:/FPI_INIA/ADN/Firefungi_2021/Raw_data_firefungi_soil/dada2_output_soil/centroids.fasta")
+clustered_asv.fasta
+
+# What we need now is a table with each ASV and its abundance per sample, similar to the curated_asv_table:
+# 1) First we will need to identify which ASVs have been clustered in the postclustering
+# 2) Then, we will need to sum up their abundances
+
+curated_asv_table <- rownames_to_column(curated_asv_table, var = "centroid_asv")
+cluster_results <- read.table("F:/FPI_INIA/ADN/Firefungi_2021/Raw_data_firefungi_soil/dada2_output_soil/cluster_results.txt")
+## V2 = the cluster ID. All the ASVs that have been assigned together they will have the same cluster number
+```
 
 After this we need to run FUNGuild/Fungal Traits
-

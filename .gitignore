@@ -11,6 +11,7 @@ Raw_data/
 Raw_data_firefungi_soil
 output_cutadapt/
 cutadapt.exe
+lulu.log_20240920_214521
 
 #Meta-analysis
 Metaanalysis_course.R
