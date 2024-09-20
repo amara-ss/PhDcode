@@ -13,10 +13,6 @@ output:
 
 *Primero procesar las secuencias en DADA2 (1º) y en LULU (2º)*
 
-```{r Directory}
-dir <- ("C:/Users/amara.santiesteban/OneDrive - UAM/Escritorio/FPI_INIA/ADN/Firefungi_2021/")
-```
-
 ```{r Packages}
 #install.packages("pacman")
 pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car")
