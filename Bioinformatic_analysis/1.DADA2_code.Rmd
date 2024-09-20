@@ -302,7 +302,7 @@ View(asv_fasta)
 
 #ASV abundance
 asv_table <- t(seqtab.nochim)
-head(seqtab.nochim)
+#head(seqtab.nochim)
 row.names(asv_table) <- sub(">", "", asv_headers)
 
 #ASV taxonomy
