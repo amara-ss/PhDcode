@@ -174,7 +174,7 @@ head(sample.names)
 
 ```{r DADA2}
 #Visualization --> the green line is the average quality score
-dada2::plotQualityProfile(cutFs[c(1:2)]) #Change these numbers to see different samples
+#dada2::plotQualityProfile(cutFs[c(1:2)]) #Change these numbers to see different samples
 #Qp + theme(
 #   strip.text = element_text(size = 4.5))  
 #ggsave("qualityplotsF.png")
@@ -258,7 +258,7 @@ totals
 
 ```{r Assign taxonomy}
 #The assignTaxonomy function takes as input a set of sequences to be classified, and a training set of reference sequences with known taxonomy, and outputs taxonomic assignments with at least minBoot bootstrap confidence.
-#The database we are using in this case is **UNITE 2022**: https://unite.ut.ee/repository.php --> this is critical because depending on which database we use and even the version, it can drastically change our results.
+#The database we are using in this case is **UNITE 2023**: https://unite.ut.ee/repository.php --> this is critical because depending on which database we use and even the version, it can drastically change our results.
 
 # Assign taxonomy                 ###### ATENTION: HIGH COMPUTATIONAL EFFORT ######
                                    ### MORE THAN 1 DAY OF COMPUTING IN WINDOWS ###
@@ -280,7 +280,10 @@ Nuestro output en este punto es todo lo que necesitamos para analizar nuestro se
 
 ```{r replace sequences with ASV}
 
-output_folder <- "Raw_data_firefungi_soil/dada2_output_soil/"
+output_folder <- ("Raw_data_firefungi_soil/dada2_output")
+# Create the destination folder if it doesn't exist
+if (!dir.exists(output_folder)) {
+  dir.create(output_folder, recursive = TRUE)}
 
 #transposed table and replace sequences with ASV (ASV_table.csv)
 #Extracted sequences and ASVs to make a fasta file (asv_OTU.fasta)

@@ -84,18 +84,20 @@ print(sorted_loadings)
 dataset$TRAT2 <- ordered(dataset$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
 pca_plot <- fviz_pca_biplot(pca_sev,
                 geom.var = c("arrow","text"),
-                mean.point=F, #No centroids
+                mean.point = FALSE, # No centroids
                 label = "none",
-                col.var = "#696969", alpha.var=0.3,
-                pointsize = 6, alpha.ind = 0.2, 
-                pointshape=16,
-                col.ind = dataset$TRAT2, shape.ind="21",
+                col.var = "#696969", alpha.var = 0.3,
+                pointsize = 6, alpha.ind = 0.4, 
+                pointshape = 16,
+                col.ind = dataset$TRAT2, shape.ind = "21",
                 palette = cols,
                 repel = TRUE,
-                addEllipses=TRUE,
-                ellipse.type="confidence",
-                ellipse.alpha = 0.4,
-                ellipse.size=3,
+                addEllipses = TRUE,
+                ellipse.type = "confidence",
+                ellipse.level = 0.99,  # confident %
+                ellipse.alpha = 0.2,
+                ellipse.size = 5, #thickness
+                ellipse.order = 1, # Draw ellipses first (under the points)
                 ggtheme = theme_base()) +
   theme(legend.position = "none") +
   scale_x_reverse()+ #We want a fire severity gradient from UB -> HS
