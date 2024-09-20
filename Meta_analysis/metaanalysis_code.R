@@ -56,6 +56,8 @@ downloaded_papers <- references_cleaned %>%
 selected_papers2 <- downloaded_papers %>%
   filter(INCLUSION2=="YES")
 
+hist(selected_papers2$PUBLICATION_YEAR)
+
 #PRISMA flow-chart:
 phases <- c("START_PHASE: 573 of studies identified through database searching",
             "START_PHASE: # of additional studies identified through other sources",
