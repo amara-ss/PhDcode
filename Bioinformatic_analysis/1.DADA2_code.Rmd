@@ -314,8 +314,8 @@ OTU_TAX_table <- merge(asv_table, asv_tax, by=0)
 OTU_TAX_table
 
 #defining output paths within the new folder
-asv_fasta_file <- paste0(output_folder, "asv_OTU.fasta")
-asv_table_file <- paste0(output_folder, "asv_table.csv")
+asv_fasta_file <- file.path(output_folder, "asv_OTU.fasta")
+asv_table_file <- file.path(output_folder, "asv_table.csv")
 asv_tax_file <- paste0(output_folder, "asv_tax.csv")
 OTU_TAX_table_file <- paste0(output_folder, "OTU_TAX_table.csv")
 
