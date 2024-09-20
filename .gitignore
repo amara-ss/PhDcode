@@ -10,3 +10,6 @@ Raw_data/
 Raw_data_firefungi_soil
 output_cutadapt/
 cutadapt.exe
+
+#Meta-analysis
+Metaanalysis_course.R
