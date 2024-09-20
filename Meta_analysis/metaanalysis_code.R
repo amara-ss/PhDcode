@@ -45,6 +45,17 @@ abstract_screener("Effort_Amara1.csv",
                   highlightKeywords = c("fire", "burn", "ectomycorrhiza", 
                                         "mycorrhiza", "fungi"))
 
+#Selected papers for retrieving information (232):
+selected_papers1 <- references_cleaned %>%
+  filter(INCLUSION2=="YES")
+#Pdf files available (215):
+downloaded_papers <- references_cleaned %>%
+  filter(Pdf_available=="YES")
+#Out of the downloaded files, some of there were reviews classified as "maybe" so we just 
+# want to keep files that are actually priamry data (204):
+selected_papers2 <- downloaded_papers %>%
+  filter(INCLUSION2=="YES")
+
 #PRISMA flow-chart:
 phases <- c("START_PHASE: 573 of studies identified through database searching",
             "START_PHASE: # of additional studies identified through other sources",
@@ -57,7 +68,3 @@ phases <- c("START_PHASE: 573 of studies identified through database searching",
             "EXCLUDE_PHASE: # studies excluded, incomplete data reported",
             "final # of studies included in quantitative synthesis (meta-analysis)")
 plot_PRISMA(phases)
-
-#Selected papers for retrieving information (#262):
-selected_papers1 <- references_cleaned %>%
-  filter(INCLUSION2=="YES")

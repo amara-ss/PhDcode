@@ -1,5 +1,5 @@
 ---
-title: "DADA2 pipeline of Navalacruz 2021 dataset sampling"
+title: "DADA2 pipeline of the Firefungi 2021 dataset sampling"
 author: "Amara Santiesteban Serrano"
 date: " r format(Sys.time(), '%d %B, %Y') "
 output: 
