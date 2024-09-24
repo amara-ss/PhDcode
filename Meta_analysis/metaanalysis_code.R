@@ -56,13 +56,14 @@ hist(selected_papers2$PUBLICATION_YEAR)
 
 #PRISMA flow-chart:
 phases <- c("START_PHASE: 573 of studies identified through database searching",
-            "START_PHASE: # of additional studies identified through other sources",
             "564 of studies after duplicates removed",
             "564 of studies with title and abstract screened",
-            "EXCLUDE_PHASE: # of studies excluded",
-            "# of full-text articles assessed for eligibility",
+            "EXCLUDE_PHASE: 334 of studies excluded",
+            "215 of full-text articles assessed for eligibility",
             "EXCLUDE_PHASE: # of full-text excluded, not fitting eligibility criteria",
             "# of studies included in qualitative synthesis",
             "EXCLUDE_PHASE: # studies excluded, incomplete data reported",
             "final # of studies included in quantitative synthesis (meta-analysis)")
+#png("PRISMA_flow_diagram.png", width = 1600, height = 1200, res = 160)
 plot_PRISMA(phases)
+dev.off()
