@@ -269,22 +269,55 @@ trial <- Firefungi_simple %>%
   mutate(across(all_of(my_vars),           
                 ~ rescale(., to=c(0,1)),            
                 .names = "{.col}_standardized"))
-# 3) Create the 6 "soil function" categories: Soil_properties, Nutrient_pools, Soil_carbon, Soil_activity, Heavy_metals,Soil_biota:
-aver_mul2 <- trial %>%
-  group_by(TRAT2, DEPTH) %>%
-  mutate(Soil_properties = mean(c(pH_standardized, EC_standardized, Bulk_density_g_cm3_standardized)),
-         Nutrient_pools = mean(c(A_phosphorus_ppm_105_standardized, NH4_mgL_105_standardized, NO3_mgL_105_standardized, Ntotal_g_100g_105_standardized, Ca_g_kg_standardized, K_g_kg_standardized, Mg_g_kg_standardized, Na_g_kg_standardized)),
-         Soil_carbon = mean(c(Ctotal_g_100g_105_standardized, SOM_per_corregido_standardized, Carbon_stock_Mg_ha_standardized)),
-         Soil_activity = mean(c(Phosphatase_activity_µmol_g_h_standardized, MBC_mg_kg_105_standardized)),
-         Heavy_metals = mean(c(Al_g_kg_standardized, Cu_mg_Kg_105_standardized, Fe_g_Kg_standardized,Zn_mg_Kg_105_standardized)),
-         Soil_biota = mean(c(Nematode_g_105_standardized, Ergosterol_µg_g_standardized))) %>%
-  ungroup()
-# 4) Dataframe of the defined soil functions and their mean value: 
-soil_functions <- aver_mul2 %>%
-  dplyr::select(TRAT2, DEPTH, Soil_properties, Nutrient_pools, Soil_carbon, Soil_activity, Heavy_metals, Soil_biota) 
-# 5) Define the functions:
+
+
+
+
+
+
+
+
+
+
+
+# 3) Create the 6 "soil function" categories with their mean and standard error: Soil_properties, Nutrient_pools, Soil_carbon, Soil_activity, Heavy_metals,Soil_biota:
+soil_functions <- trial %>%
+  dplyr::group_by(TRAT2, DEPTH) %>%
+  dplyr::summarise(
+    Soil_properties_mean = mean(c(pH_standardized, EC_standardized, Bulk_density_g_cm3_standardized), na.rm = TRUE),
+    Soil_properties_se = sd(c(pH_standardized, EC_standardized, Bulk_density_g_cm3_standardized), na.rm = TRUE) / sqrt(n()),
+
+    Nutrient_pools_mean = mean(c(A_phosphorus_ppm_105_standardized, NH4_mgL_105_standardized, NO3_mgL_105_standardized, Ntotal_g_100g_105_standardized, Ca_g_kg_standardized, K_g_kg_standardized, Mg_g_kg_standardized, Na_g_kg_standardized), na.rm = TRUE),
+    Nutrient_pools_se = sd(c(A_phosphorus_ppm_105_standardized, NH4_mgL_105_standardized, NO3_mgL_105_standardized, Ntotal_g_100g_105_standardized, Ca_g_kg_standardized, K_g_kg_standardized, Mg_g_kg_standardized, Na_g_kg_standardized), na.rm = TRUE) / sqrt(n()),
+
+    Soil_carbon_mean = mean(c(Ctotal_g_100g_105_standardized, SOM_per_corregido_standardized, Carbon_stock_Mg_ha_standardized), na.rm = TRUE),
+    Soil_carbon_se = sd(c(Ctotal_g_100g_105_standardized, SOM_per_corregido_standardized, Carbon_stock_Mg_ha_standardized), na.rm = TRUE) / sqrt(n()),
+
+    Soil_activity_mean = mean(c(Phosphatase_activity_µmol_g_h_standardized, MBC_mg_kg_105_standardized), na.rm = TRUE),
+    Soil_activity_se = sd(c(Phosphatase_activity_µmol_g_h_standardized, MBC_mg_kg_105_standardized), na.rm = TRUE) / sqrt(n()),
+
+    Heavy_metals_mean = mean(c(Al_g_kg_standardized, Cu_mg_Kg_105_standardized, Fe_g_Kg_standardized, Zn_mg_Kg_105_standardized), na.rm = TRUE),
+    Heavy_metals_se = sd(c(Al_g_kg_standardized, Cu_mg_Kg_105_standardized, Fe_g_Kg_standardized, Zn_mg_Kg_105_standardized), na.rm = TRUE) / sqrt(n()),
+
+    Soil_biota_mean = mean(c(Nematode_g_105_standardized, Ergosterol_µg_g_standardized), na.rm = TRUE),
+    Soil_biota_se = sd(c(Nematode_g_105_standardized, Ergosterol_µg_g_standardized), na.rm = TRUE) / sqrt(n()),
+    
+    .groups = "drop"
+  )
+
+
+
+
+
+ggplot(diamonds, aes(cut, price, fill = color)) +
+  stat_summary(geom = "bar", fun = mean, position = "dodge") +
+  stat_summary(geom = "errorbar", fun.data = mean_se, position = "dodge")
+
+
+
+# 4) Define the functions:
 EF <- names(soil_functions) %>% 
-  intersect(c("Soil_properties", "Nutrient_pools", "Soil_carbon", "Soil_activity", "Heavy_metals", "Soil_biota"))
+  intersect(c("Soil_properties_mean", "Nutrient_pools_mean", "Soil_carbon_mean", "Soil_activity_mean", "Heavy_metals_mean", "Soil_biota_mean"))
 # 6) Plot visualization: 
 soil_functions %>%
   dplyr::select(TRAT2, DEPTH, all_of(EF)) %>%
@@ -304,6 +337,7 @@ soil_functions %>%
     strip.background = element_blank()  # Remove strip background
   )
 #ggsave("soil_functions_whole.png")
+
 
 ##### Linear models
 var_func <- soil_functions$Heavy_metals
