@@ -45,16 +45,12 @@ abstract_screener("Effort_Amara1.csv",
                   highlightKeywords = c("fire", "burn", "ectomycorrhiza", 
                                         "mycorrhiza", "fungi"))
 
-#Selected papers for retrieving information (232):
+#Selected papers for retrieving information (230):
 selected_papers1 <- references_cleaned %>%
   filter(INCLUSION2=="YES")
 #Pdf files available (215):
-downloaded_papers <- references_cleaned %>%
+downloaded_papers <- selected_papers1 %>%
   filter(Pdf_available=="YES")
-#Out of the downloaded files, some of there were reviews classified as "maybe" so we just 
-# want to keep files that are actually priamry data (204):
-selected_papers2 <- downloaded_papers %>%
-  filter(INCLUSION2=="YES")
 
 hist(selected_papers2$PUBLICATION_YEAR)
 
