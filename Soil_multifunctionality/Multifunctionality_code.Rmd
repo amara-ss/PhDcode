@@ -45,13 +45,17 @@ dataset$ID <- as.character(dataset$ID)
 dataset$PLOT <- as.character(dataset$PLOT)
 dataset$SITE <- as.character(dataset$SITE)
 
+se <- function(x) {
+  sd(x) / sqrt(length(x))
+}
+
 descrip <- function(dataset) {
   result <- dataset %>%
     dplyr::group_by(TRAT2, DEPTH) %>%
     dplyr::summarize(across(where(is.numeric), list(
       mean = ~mean(.),
-      se = ~sd(.) / sqrt(n())
-    ), .names = "{col}_{fn}"))
+      se = ~se(.)),
+      .names = "{col}_{fn}"))
 
   return(result)
 }
@@ -62,7 +66,7 @@ descrip <- descrip(dataset)
 dataset %>%
   dplyr::group_by(TRAT2, DEPTH) %>%
   summarise(mean = mean(C_N_ratio),
-            se = sd(C_N_ratio)/sqrt(n()))
+            se = se(C_N_ratio))
 ```
 
 ```{r Colors}
@@ -284,35 +288,38 @@ std_response <- dataset_simple %>%
   mutate(across(all_of(resp_variables),           
                 ~ rescale(., to=c(0,1)),            
                 .names = "{.col}_standardized"))
+
 # 2) Create the 6 "soil function" categories with their mean and standard error: Soil_properties, Nutrient_pools, Soil_carbon, Soil_activity, Heavy_metals, Soil_biota:
 soil_functions <- std_response %>%
-  dplyr::group_by(ID,TRAT2, DEPTH) %>%
+  dplyr::group_by(ID,TRAT2, DEPTH) %>% #We need to include ID because we want an individual value of Soil Function per sample
   dplyr::mutate(
     Soil_properties = mean(c(pH_standardized, EC_standardized, Bulk_density_g_cm3_standardized), na.rm = TRUE),
-    Soil_properties_se = sd(c(pH_standardized, EC_standardized, Bulk_density_g_cm3_standardized), na.rm = TRUE) / sqrt(n()),
-
     Nutrient_pools = mean(c(A_phosphorus_ppm_105_standardized, NH4_mgL_105_standardized, NO3_mgL_105_standardized, Ntotal_g_100g_105_standardized, Nitrogen_stock_Mg_ha_standardized, C_N_ratio_standardized, Ca_g_kg_standardized, K_g_kg_standardized, Mg_g_kg_standardized, Na_g_kg_standardized), na.rm = TRUE),
-    Nutrient_pools_se = sd(c(A_phosphorus_ppm_105_standardized, NH4_mgL_105_standardized, NO3_mgL_105_standardized, Ntotal_g_100g_105_standardized, Ca_g_kg_standardized, K_g_kg_standardized, Mg_g_kg_standardized, Na_g_kg_standardized), na.rm = TRUE) / sqrt(n()),
-
     Soil_carbon = mean(c(Ctotal_g_100g_105_standardized, SOM_per_corregido_standardized, Carbon_stock_Mg_ha_standardized), na.rm = TRUE),
-    Soil_carbon_se = sd(c(Ctotal_g_100g_105_standardized, SOM_per_corregido_standardized, Carbon_stock_Mg_ha_standardized), na.rm = TRUE) / sqrt(n()),
-
     Soil_activity = mean(c(Phosphatase_activity_µmol_g_h_standardized, MBC_mg_kg_105_standardized), na.rm = TRUE),
-    Soil_activity_se = sd(c(Phosphatase_activity_µmol_g_h_standardized, MBC_mg_kg_105_standardized), na.rm = TRUE) / sqrt(n()),
-
     Heavy_metals = mean(c(Al_g_kg_standardized, Cu_mg_Kg_105_standardized, Fe_g_Kg_standardized, Zn_mg_Kg_105_standardized), na.rm = TRUE),
-    Heavy_metals_se = sd(c(Al_g_kg_standardized, Cu_mg_Kg_105_standardized, Fe_g_Kg_standardized, Zn_mg_Kg_105_standardized), na.rm = TRUE) / sqrt(n()),
+    Soil_biota = mean(c(Nematode_g_105_standardized, Ergosterol_µg_g_standardized), na.rm = TRUE))
 
-    Soil_biota = mean(c(Nematode_g_105_standardized, Ergosterol_µg_g_standardized), na.rm = TRUE),
-    Soil_biota_se = sd(c(Nematode_g_105_standardized, Ergosterol_µg_g_standardized), na.rm = TRUE) / sqrt(n())
-  )
+#### Summarise by fire severity and depth
+soil_functions_sum <- soil_functions %>%
+dplyr::group_by(TRAT2, DEPTH) %>%
+dplyr::summarise(
+        SE_soil_properties = se(Soil_properties), #SE before mean because otherwise will try to calculate it over the mean and the outcome will be NAs      
+        Soil_properties = mean(Soil_properties),
+        SE_nutrient_pools = se(Nutrient_pools), 
+        Nutrient_pools = mean(Nutrient_pools),
+        SE_soil_carbon = se(Soil_carbon), 
+        Soil_carbon = mean(Soil_carbon),
+        SE_soil_activity = se(Soil_activity), 
+        Soil_activity = mean(Soil_activity),
+        SE_heavy_metals = se(Heavy_metals), 
+        Heavy_metals = mean(Heavy_metals),
+        SE_soil_biota = se(Soil_biota),
+        Soil_biota = mean(Soil_biota)
+        )
 
-####
-soil_functions_clean <- soil_functions %>%
-dplyr::select(ID,TRAT2, DEPTH, 53:64) 
-
-# 3) Reshape the data from wide to long format
-soil_long <- soil_functions_clean %>%
+# 3) Reshape the data from wide to long format to plot it
+soil_long <- soil_functions_sum %>%
   pivot_longer(cols = c(Soil_properties, 
                         Nutrient_pools, 
                         Soil_carbon, 
@@ -320,17 +327,17 @@ soil_long <- soil_functions_clean %>%
                         Heavy_metals, 
                         Soil_biota),
                         names_to = "Soil_function", values_to = "Mean") %>%
-  dplyr::select(ID, TRAT2, DEPTH, Soil_function, Mean)
+  dplyr::select(TRAT2, DEPTH, Soil_function, Mean)
   
-soil_long_se <- soil_functions_clean %>%
-  pivot_longer(cols = c(Soil_properties_se, 
-                        Nutrient_pools_se, 
-                        Soil_carbon_se, 
-                        Soil_activity_se, 
-                        Heavy_metals_se, 
-                        Soil_biota_se),
+soil_long_se <- soil_functions_sum %>%
+  pivot_longer(cols = c(SE_soil_properties, 
+                        SE_nutrient_pools, 
+                        SE_soil_carbon, 
+                        SE_soil_activity, 
+                        SE_heavy_metals, 
+                        SE_soil_biota),
                         names_to = "SE_function", values_to = "SE") %>%
-  dplyr::select(ID, TRAT2, DEPTH,SE)
+  dplyr::select(TRAT2, DEPTH,SE)
 
 ## Add the SE to the dataframe
 soil_long$SE <- soil_long_se$SE
@@ -362,14 +369,16 @@ ggplot(soil_long, aes(x = TRAT2, y = Mean, fill = DEPTH)) +
     axis.line.x = element_line(color = "black"),  # Ensure the x-axis line shows up in all plots
     legend.position = "none"  # Remove the legend
   )
-#ggsave("output/soil_functions_vertical.png", width = 3, height = 7, dpi = 300)
+#ggsave("output/soil_functions_long.png", width = 3, height = 7, dpi = 300)
+
 
 ##### Linear models
-soil_functions_clean_sub <- soil_functions_clean %>%
+soil_functions_sub <- soil_functions %>%
   filter(DEPTH=="topsoil")
-var_func <- soil_functions_clean_sub$Soil_activity
 
-lm_f <- aov(var_func ~ TRAT2, data = soil_functions_clean_sub)
+var_func <- soil_functions_sub$Heavy_metals
+
+lm_f <- aov(var_func ~ TRAT2, data = soil_functions_sub)
 summary(lm_f)
 anova(lm_f)
 Tuckeys<- TukeyHSD(lm_f)
