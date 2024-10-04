@@ -11,12 +11,14 @@ output:
     chunk_output_type: inline
 ---
 
+The code is structured in the same order as the results of the article
+
 ```{r Packages}
 #install.packages("pacman")
 pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "vegan", "hrbrthemes", "indicspecies", "GGally")
 
-#remotes::install_github("ricardo-bion/ggradar")
-library(ggradar)
+#devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+library(pairwiseAdonis)
 ```
 
 ```{r Read data}
@@ -77,12 +79,13 @@ cols <- c("#41b6c4","#fd8d3c","#cb181d","#800026")
 - Most used for environmental (abiotic) data
 - This data must be continuous
 - The aim is to reduce dimensions
+- Based on Euclidean distances
 
 ```{r PCA - plot characterizarion }
 #Variables considered in this analysis are plot slope, canopy cover percentages, ground cover percentages and depth of the organic layer (both charred and non-charred):
 
 plot_vars <- c("Slope_per","Organic_layer_mean_depth_cm", "Charred_organic_layer_mean_cm", "Green_per", "Brown_per", "Consumed_per", "Grass_per", "Old_litter_per", "New_litter_per", "Mineral_per", "Ash_per", "Stone_per")
-  
+
 pca_sev <- prcomp(dataset[,plot_vars], scale=T)
 summary(pca_sev)
 
@@ -147,7 +150,7 @@ dataset_pc1 <- dataset_simple %>%
   dplyr::mutate(pc1 = pc1$pc1)
 ```
 
-```{r Exploratory analysis of vars}
+```{r Exploratory analysis of response variables}
 var <- dataset_pc1$C_N_ratio
 var_log <- (log(dataset_pc1$C_N_ratio)+1)
 
@@ -282,7 +285,7 @@ cld <- multcompLetters4(lm_f, Tuckeys)
 print(cld) 
 ```
 
-```{r Grouping into soil functions }
+```{r Soil functions }
 # 1) Normalization of variables (resp_variables)
 std_response <- dataset_simple %>%
   mutate(across(all_of(resp_variables),           
@@ -371,7 +374,6 @@ ggplot(soil_long, aes(x = TRAT2, y = Mean, fill = DEPTH)) +
   )
 #ggsave("output/soil_functions_long.png", width = 3, height = 7, dpi = 300)
 
-
 ##### Linear models
 soil_functions_sub <- soil_functions %>%
   filter(DEPTH=="topsoil")
@@ -385,6 +387,275 @@ Tuckeys<- TukeyHSD(lm_f)
 
 cld <- multcompLetters4(lm_f, Tuckeys)
 print(cld) 
+```
+
+*ORDINATIONS*
+
+```{r Ordination matrix}
+#These analysis are sensitive to the scale of the different response variables so the first thing we do is to standardize the response variables if they are not in the same units:
+ordination_df <- dataset_simple %>%
+  mutate(across(all_of(resp_variables),           
+                ~ rescale(., to=c(0,1)),            
+                .names = "{.col}_standardized"))
+
+ordination_df0 <- ordination_df %>%
+  dplyr::select(ends_with("_standardized"))
+
+#Topsoil:
+ordination_df_topsoil <- ordination_df %>% 
+  filter(DEPTH=="topsoil") %>%
+  dplyr::select(all_of(ends_with("_standardized"))) 
+
+#Subsoil:
+ordination_df_subsoil <- ordination_df %>% 
+  filter(DEPTH=="subsoil") %>%
+  dplyr::select(all_of(ends_with("_standardized"))) 
+```
+
+```{r NMDS}
+ordination_dist <- vegdist(ordination_df0, distance="euclidean")
+
+NMDS0<-metaMDS(ordination_dist, distance="euclidean, k=2")
+summary(NMDS0)
+NMDS0$stress
+
+NMDS0.perm <- adonis2(ordination_dist~ ordination_df$TRAT2*ordination_df$DEPTH) 
+NMDS0.perm # P = .001
+
+nem_pairwise=pairwise.adonis2(ordination_dist ~  TRAT2*DEPTH, data = ordination_df)
+nem_pairwise
+```
+
+```{r NMDS}
+#Topsoil:
+set.seed(123)
+nmds_top<-metaMDS(ordination_df_topsoil, k=2)
+nmds_top
+
+variables_top <- as.data.frame(scores(nmds_top, "species"))
+variables_top
+
+coordenadas_top <- as.data.frame(scores(nmds_top)$sites) #The scores represent samples in the new ordination space.
+coordenadas_top
+
+coordenadas_top$TRAT2 = dataset_topsoil$TRAT2 
+coordenadas_top$ID = dataset_topsoil$ID
+coordenadas_top$DEPTH = dataset_topsoil$DEPTH
+head(coordenadas_top)
+
+#Add enviromental data
+env_df <- dataset_topsoil %>%
+  dplyr::select(all_of(plot_vars))
+
+env_nmds <- envfit(nmds_top, env_df, permutations = 999, na.rm = TRUE)
+env_nmds
+
+env_coord <- as.data.frame(scores(env_nmds, "vectors"))
+env_coord_sig <- scores(env_nmds, "vectors")[env_nmds$vectors$pvals < 0.05, ] #Significant environmental vectors
+
+#############################################
+
+#Subsoil:
+set.seed(123)
+nmds<-metaMDS(ordination_df_subsoil, k=2)
+nmds
+
+variables_sub <- as.data.frame(scores(nmds, "species"))
+variables_sub
+
+coordenadas_sub <- as.data.frame(scores(nmds)$sites) #The scores represent samples in the new ordination space.
+coordenadas_sub
+
+coordenadas_sub$TRAT2 = dataset_subsoil$TRAT2 
+coordenadas_sub$ID = dataset_subsoil$ID
+coordenadas_sub$DEPTH = dataset_subsoil$DEPTH
+head(coordenadas_sub)
+
+#Add enviromental data
+env_df <- dataset_subsoil %>%
+  dplyr::select(all_of(plot_vars))
+
+env_nmds <- envfit(nmds, env_df, permutations = 999, na.rm = TRUE)
+env_nmds
+
+env_coord <- as.data.frame(scores(env_nmds, "vectors"))
+env_coord_sig <- scores(env_nmds, "vectors")[env_nmds$vectors$pvals < 0.05, ] #Significant environmental vectors
+```
+
+```{r NMDS: visualization of centroids}
+#Topsoil
+metadata_nmds_top <- inner_join(dataset_simple, coordenadas_top, by=c("ID","TRAT2", "DEPTH"))
+metadata_nmds_top
+
+centroid_top <- metadata_nmds_top %>%
+  filter(DEPTH=="topsoil") %>%
+  group_by(TRAT2) %>%
+  summarize(axis1 = mean(NMDS1), #This will create the centroids
+            axis2 = mean(NMDS2))
+
+star <- metadata_nmds_top %>%
+  filter(DEPTH == "topsoil") %>%  # Filter topsoil data
+  left_join(centroid_top, by = "TRAT2") %>%
+  rename(centroid1 = axis1, centroid2 = axis2)  # Rename centroids for plotting
+
+centroid_top$TRAT2 <- ordered(centroid_top$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+star$TRAT2 <- ordered(star$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+
+ggplot(star, aes(x=NMDS1, xend=centroid1, 
+                 y=NMDS2, yend=centroid2, color=TRAT2)) +
+  geom_segment(aes(x = 0, y = 0, xend = NMDS1*0.3, yend = NMDS2*0.3), 
+               data = env_coord_sig, size =1.1, alpha=0.7, color = "#737373", arrow=arrow(length=unit(0.02, "npc"))) +
+  
+  geom_segment(alpha=0.07) +
+  geom_point(size=4, alpha=0.07) +
+  #geom_text(data = env_coord_sig, aes(x = 2*NMDS1, y = 2*NMDS2), colour = "grey30", 
+  #          label = row.names(env_coord_sig), inherit.aes = FALSE) + 
+  geom_point(data=centroid_top, mapping = aes(x=axis1, y=axis2, color=TRAT2), shape=19, alpha=0.9, size=5, inherit.aes = FALSE) +
+  scale_color_manual(values=cols) +
+  theme_minimal()+
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank()
+  )
+#ggsave("output/nmds_top.png")
+
+ggplot(star, aes(x=NMDS1, xend=centroid1, 
+                 y=NMDS2, yend=centroid2, color=TRAT2)) +
+  #geom_segment(aes(x = 0, y = 0, xend = 2*NMDS1, yend = 2*NMDS2), 
+  #             data = env_coord_sig, size =1.1, alpha=0.7, color = "#737373", arrow=arrow(length=unit(0.02, "npc"))) +
+  
+  geom_segment(alpha=0.3) +
+  geom_point(size=3.5, alpha=0.8) +
+  #geom_text(data = env_coord_sig, aes(x = 2*NMDS1, y = 2*NMDS2), colour = "grey30", 
+  #          label = row.names(env_coord_sig), inherit.aes = FALSE) + 
+  #geom_point(data=centroid, mapping = aes(x=axis1, y=axis2, color=TRAT2), shape=19, alpha=0.9, size=5, inherit.aes = FALSE) +
+  scale_color_manual(values=cols) +
+  theme_minimal()+
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank()
+  )
+#ggsave("output/nmds_coords_top.png")
+
+#################################################
+
+#Subsoil
+metadata_nmds_sub <- inner_join(dataset_simple, coordenadas_sub, by=c("ID","TRAT2", "DEPTH"))
+metadata_nmds_sub
+
+centroid_sub <- metadata_nmds_sub %>%
+  dplyr::filter(DEPTH=="subsoil") %>%
+  dplyr::group_by(TRAT2) %>%
+  dplyr::summarize(axis1 = mean(NMDS1), #This will create the centroids
+            axis2 = mean(NMDS2))
+
+star_sub <- metadata_nmds_sub %>%
+  filter(DEPTH == "subsoil") %>%  
+  left_join(centroid_sub, by = "TRAT2") %>%
+  rename(centroid1 = axis1, centroid2 = axis2)  
+
+centroid_sub$TRAT2 <- ordered(centroid_sub$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+star_sub$TRAT2 <- ordered(star_sub$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+
+ggplot(star_sub, aes(x=NMDS1, xend=centroid1, 
+                 y=NMDS2, yend=centroid2, color=TRAT2)) +
+  geom_segment(aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2), 
+               data = env_coord_sig, size =1.1, alpha=0.7, color = "#737373", arrow=arrow(length=unit(0.02, "npc"))) +
+  
+  geom_segment(alpha=0.07) +
+  geom_point(size=4, alpha=0.07) +
+  #geom_text(data = env_coord_sig, aes(x = 2*NMDS1, y = 2*NMDS2), colour = "grey30", 
+  #          label = row.names(env_coord_sig), inherit.aes = FALSE) + 
+  geom_point(data=centroid_sub, mapping = aes(x=axis1, y=axis2, color=TRAT2), shape=19, alpha=0.9, size=5, inherit.aes = FALSE) +
+  scale_color_manual(values=cols) +
+  theme_minimal()+
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank()
+  )
+#ggsave("output/nmds_sub.png")
+
+ggplot(star_sub, aes(x=NMDS1, xend=centroid1, 
+                 y=NMDS2, yend=centroid2, color=TRAT2)) +
+  #geom_segment(aes(x = 0, y = 0, xend = 2*NMDS1, yend = 2*NMDS2), 
+  #             data = env_coord_sig, size =1.1, alpha=0.7, color = "#737373", arrow=arrow(length=unit(0.02, "npc"))) +
+  
+  geom_segment(alpha=0.3) +
+  geom_point(size=3.5, alpha=0.8) +
+  #geom_text(data = env_coord_sig, aes(x = 2*NMDS1, y = 2*NMDS2), colour = "grey30", 
+  #          label = row.names(env_coord_sig), inherit.aes = FALSE) + 
+  #geom_point(data=centroid, mapping = aes(x=axis1, y=axis2, color=TRAT2), shape=19, alpha=0.9, size=5, inherit.aes = FALSE) +
+  scale_color_manual(values=cols) +
+  theme_minimal()+
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank()
+  )
+#ggsave("output/nmds_coords_sub.png")
+```
+
+```{r NMDS: ellipses}
+ggplot(metadata_nmds_top, aes(x=NMDS1, y=NMDS2, color=TRAT2, fill=TRAT2)) +
+  geom_point(size=4, alpha=0.5) +
+  geom_point(data=centroid_top, mapping = aes(x=axis1, y=axis2, color=TRAT2), shape=15, size=4.5, inherit.aes = FALSE) +
+  stat_ellipse(geom="polygon", level=.7, alpha=.1, layer="background") +
+  scale_color_manual(values=cols) +
+  scale_fill_manual(values=cols) +
+  theme_minimal()+
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank()
+  )
+```
+
+To test the similarity of the response variables within the same fire severity class and between different severity classes, we will perform an *ANOSIM*:
+- *Non-parametric*
+- Does NOT account for interactions 
+- It *ranks* the values in the resemblance matrix before proceeding with the analysis
+- The information of interest is the *relationships among the dissimilarities* (it will work with the ranks on the transformed matrix)
+- *Statistical significance* means that the response variables are very similar within groups and different among groups
+- When the variance within a group is considerable, this will overlap and the difference among groups will not be significant
+- The outcome will be an *R statistic* ranging from -1 to 1 and a significance value
+- Recommended for NMDS
+
+```{r ANOSIM - Analysis of Similarities}
+#Whole data:
+anosim <- vegan::anosim(ordination_df0, TRAT2, distance="euclidean", permutations=9999)
+
+#Topsoil:
+anosim_topsoil <-vegan::anosim(ordination_df_topsoil, dataset_topsoil$TRAT2, distance="euclidean", permutations=9999)
+
+#Subsoil
+anosim_subsoil<-vegan::anosim(ordination_df_subsoil, dataset_subsoil$TRAT2, distance="euclidean", permutations=9999)
+
+#Results
+anosim
+anosim_topsoil #R-values close to 1 mean that our groups are extremely different
+anosim_subsoil #R-values close to 1 mean that our groups are extremely different
+```
+
+*PERMANOVA* will work with the *raw* numbers in the dissimilarities matrix:
+- *Parametric*
+- It DOES account for interactions
+- The outcome is a *Fisher's F*
+- Recommended for PCA or PCoA
+
+```{r PERMANOVA}
+# Run the adonis2 analysis
+p <- adonis2(dataset[,plot_vars] ~ TRAT2, data = dataset, permutations = 9999)
+p
+```
+
+```{r}
+h <- adonis2(ordination_df0~TRAT2*DEPTH, ordination_df, distance="euclidean")
+h
+adonis_results <- as.data.frame(h)
+adonis_results
 ```
 
 ```{r Multifunctionality: calculated as Byrnes et al. 2022}
@@ -470,15 +741,18 @@ clean_multifunc %>%
 
 For this analysis, we ran five competing models: 1. no effects (null model), 2. effects of TRAT2, 3. effects of depth, 4. effects of both TRAT2 and depth, but without interaction effects and 5. effects of both TRAT2 and depth, including their interaction. We then compared these models based on AIC values and selected the model with the lowest AIC.
 
-```{r}
+```{r Explanatory models for Multifunctionality}
+
 lm.multifunc1 <- lm(mf_eff_1~1, asduffy)
 lm.multifunc2 <- lm(mf_eff_1~TRAT2, asduffy)
 lm.multifunc3 <- lm(mf_eff_1~DEPTH, asduffy)
 lm.multifunc4 <- aov(mf_eff_1~TRAT2*DEPTH, asduffy)
 lm.multifunc5 <- lm(mf_eff_1~TRAT2+DEPTH, asduffy)
+lm.multifunc6 <- lm(mf_eff_1~pc1+DEPTH, asduffy)
 
-AIC(lm.multifunc1, lm.multifunc2, lm.multifunc3, lm.multifunc4, lm.multifunc5)
+AIC(lm.multifunc1, lm.multifunc2, lm.multifunc3, lm.multifunc4, lm.multifunc5, lm.multifunc6)
 summary(lm.multifunc4) 
+anova(lm.multifunc4)
 
 Tuckeys<- TukeyHSD(lm.multifunc4)
 print(Tuckeys)
@@ -646,18 +920,77 @@ Firefungi_simple %>%
 ```{r Vertical distribution of soil}
 #Calculation of the difference among depths
 depth_dif <- dataset %>%
-  dplyr::select(SITE, TRAT2, DEPTH, all_of(multifunc_vars)) %>%
-  group_by(SITE, TRAT2) %>%
-  dplyr::summarize(across(all_of(multifunc_vars), 
+  dplyr::select(SITE, TRAT2, DEPTH, all_of(resp_variables)) %>%
+  group_by(SITE,TRAT2) %>%
+  dplyr::summarize(across(all_of(resp_variables), 
                    ~ mean(.[DEPTH == "topsoil"]) - mean(.[DEPTH == "subsoil"]),
                    .names = "{.col}_difference"))
 
-depth_dif_means <- depth_dif %>%
+depth_dif_sum <- depth_dif %>%
   group_by(TRAT2) %>%
-  summarize(across(ends_with("_difference"), mean))
+  summarize(across(ends_with("_difference"), list(mean = mean, se = se)))
+
+# 3) Reshape the data from wide to long format to plot it
+depth_long <- depth_dif_sum %>%
+  pivot_longer(cols = ends_with("_mean"),
+               names_to = "variables", 
+               values_to = "Mean") %>%
+  dplyr::select(TRAT2, variables, Mean)
+  
+depth_long_se <- depth_dif_sum %>%
+  pivot_longer(cols = ends_with("_se"),
+               names_to = "SE_function", 
+               values_to = "SE") %>%
+  dplyr::select(TRAT2, SE)
+
+## Add the SE to the dataframe
+depth_long$SE <- depth_long_se$SE
+
+##### Visualization 
+depth_long_filtered <- depth_long %>%
+  filter(variables %in% c("pH_difference_mean", "EC_difference_mean",
+                          "A_phosphorus_ppm_105_difference_mean", 
+                          "NO3_mgL_105_difference_mean",
+                          "Phosphatase_activity_µmol_g_h_difference_mean",
+                          "Ergosterol_µg_g_difference_mean",
+                          "Nematode_g_105_difference_mean",
+                          "SOM_per_corregido_difference_mean",
+                          "Ctotal_g_100g_105_difference_mean",
+                          "Bulk_density_g_cm3_difference_mean"))
+
+depth_long_filtered$variables <- factor(depth_long_filtered$variables, 
+                           levels = c("pH_difference_mean",
+                                      "A_phosphorus_ppm_105_difference_mean",
+                                      "EC_difference_mean", "NO3_mgL_105_difference_mean",
+                                      "Ergosterol_µg_g_difference_mean",
+                                      "Nematode_g_105_difference_mean",
+                                      "SOM_per_corregido_difference_mean",
+                                      "Ctotal_g_100g_105_difference_mean",
+                                      "Phosphatase_activity_µmol_g_h_difference_mean",
+                                      "Bulk_density_g_cm3_difference_mean"))
+depth_long_filtered$TRAT2 <- ordered(depth_long_filtered$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+
+# Create the plot
+ggplot(depth_long_filtered, aes(x = TRAT2, y = Mean, fill = TRAT2)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black", alpha = 0.7) +
+  geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), position = position_dodge(0.9), width = 0.25) +
+  scale_fill_manual(values = cols) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    strip.placement = "outside",  # Place strip labels outside the plot
+    strip.background = element_blank(),
+    legend.position = "none"
+  ) +
+  facet_wrap(~ variables, ncol = 2, scales="free_y")
+#ggsave("output/depth_dif.png", height = 7, width = 6.5, dpi = 300)
 
 ##### Linear models
-var_dif <- depth_dif$Phosphatase_activity_µmol_g_h_difference
+var_dif <- depth_dif$Bulk_density_g_cm3_difference
 
 lm_f <- aov(var_dif ~ TRAT2, data = depth_dif)
 summary(lm_f)
@@ -667,182 +1000,6 @@ print(Tuckeys)
 
 cld <- multcompLetters4(lm_f, Tuckeys)
 print(cld) 
-
-##### Visualization 
-selected_vars <- names(depth_dif) %>% 
-  intersect(c("pH_difference", "EC_difference", "A_phosphorus_ppm_105_difference", 
-              "NO3_mgL_105_difference", "Phosphatase_activity_µmol_g_h_difference", 
-              "Ergosterol_µg_g_difference", "SOM_per_corregido_difference",
-              "Nematode_g_105_difference"))
-
-depth_dif %>%
-  mutate(ID=row_number()) %>%
-  dplyr::select(TRAT2, all_of(selected_vars)) %>%
-  pivot_longer(all_of(selected_vars)) %>%
-  #now a plot
-  ggplot(aes(x = TRAT2, y = value,
-             fill = TRAT2), color="black") +
-  geom_bar(stat="identity", alpha=0.7, color=NA) +
-  scale_fill_manual(values = cols)+
-  facet_wrap(vars(forcats::fct_relevel(name, "pH_difference", 
-                                       "A_phosphorus_ppm_105_difference", 
-                                       "NO3_mgL_105_difference", "EC_difference", 
-                                       "Phosphatase_activity_µmol_g_h_difference",
-                                       "Ergosterol_µg_g_difference", 
-                                       "SOM_per_corregido_difference",
-                                       "Nematode_g_105_difference",
-                                       )), scale = "free", ncol = 2, strip.position="left") +
-  theme_minimal()+
-  theme(
-    panel.grid = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.line = element_line(color = "black"),
-    axis.text = element_text(color = "black"),
-    axis.ticks = element_line(color = "black"),
-    strip.placement = "outside",  # Place strip labels outside the plot
-    strip.background = element_blank()  # Remove strip background
-  )
-#ggsave("depth_dif2.png")
-```
-
-```{r ANOSIM}
-selected_vars <- names(Firefungi_simple) %>% 
-  intersect(c("pH", "EC", "Bulk_density_g_cm3", "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", "NH4_mgL_105",
-              "NO3_mgL_105", "Ergosterol_µg_g", "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha", "Nitrogen_stock_Mg_ha", 
-              "SOM_per_corregido", "MBC_mg_kg_105", "Nematode_g_105", "Ca_g_kg", "K_g_kg",
-              "Mg_g_kg", "Na_g_kg", "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105", "mf_eff_1"))
-
-anosim_dataf <- Firefungi_simple %>%
-  mutate(across(all_of(selected_vars),           
-                ~ rescale(., to=c(0,1)),            
-                .names = "{.col}_standardized"))
-
-anosim_dataf <- anosim_dataf %>%
-  dplyr::select(ID, all_of(ends_with("_standardized"))) 
-
-row.names(anosim_dataf) <- anosim_dataf$ID
-
-anosim_matrix <- anosim_dataf[,2:23]
-anosim_matrix <- as.matrix(anosim_matrix)
-
-anosim_matrix
-
-analisis<-vegan::anosim(anosim_matrix, Firefungi_simple$TRAT2, distance="euclidean", permutations=9999)
-analisis
-
-severity <- Firefungi_simple$TRAT2 
-differences_df <-multipatt(anosim_matrix,severity,func="r.g",control = how(nperm=9999))
-summary(differences_df)
-```
-
-```{r PERMANOVA}
-p<-adonis2(anosim_matrix~TRAT2*DEPTH, Firefungi, distance="euclidean", permutations=9999)
-p
-```
-
-```{r NMDS: points}
-set.seed(123)
-nmds<-metaMDS(anosim_matrix, distance="euclidean")
-nmds
-plot(nmds)
-
-coordenadas <- as.data.frame(scores(nmds)$sites)
-coordenadas
-
-coordenadas$TRAT2 = Firefungi_simple$TRAT2 
-coordenadas$ID = Firefungi_simple$ID
-coordenadas$DEPTH = Firefungi_simple$DEPTH
-head(coordenadas)
-
-#Add enviromental data
-env_df <- Firefungi[,c(11,19:29)]
-
-env_nmds <- envfit(nmds, env_df, permutations = 999, na.rm = TRUE)
-env_nmds
-
-env_coord <- as.data.frame(scores(env_nmds, "vectors"))
-env_coord_sig <- env_coord[c(1,2,6,11,12),]
-
-
-#Plot
-
-ggplot(coordenadas, aes(x = NMDS1, y = NMDS2)) + 
-  geom_point(size = 4, aes(colour = TRAT2, alpha=0.5)) +
-  geom_segment(aes(x = 0, y = 0, xend = 2*NMDS1, yend = 2*NMDS2), 
-       data = env_coord_sig, size =1, alpha = 0.5, colour = "grey30") +
-  geom_text(data = env_coord_sig, aes(x = 2*NMDS1, y = 2*NMDS2), colour = "grey30", 
-       label = row.names(env_coord_sig)) + 
-  scale_color_manual(values = cols_3) +
-  theme_minimal()+
-  theme(
-    panel.background = element_blank(),
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank()
-  )
-#ggsave("nmds.png")
-
-```
-
-```{r NMDS: centroid and stars}
-metadata_nmds <- inner_join(Firefungi_simple, coordenadas, by=c("ID","TRAT2", "DEPTH"))
-
-centroid <- metadata_nmds %>%
-  group_by(TRAT2) %>%
-  summarize(axis1 = mean(NMDS1),
-            axis2 = mean(NMDS2))
-
-ggplot(star, aes(x=NMDS1, xend=centroid1, 
-                 y=NMDS2, yend=centroid2, color=TRAT2)) +
-  geom_segment(aes(x = 0, y = 0, xend = 2*NMDS1, yend = 2*NMDS2), 
-               data = env_coord_sig, size =1.1, alpha=0.7, color = "#737373", arrow=arrow(length=unit(0.02, "npc"))) +
-  
-  geom_segment(alpha=0.07) +
-  geom_point(size=4, alpha=0.07) +
-  #geom_text(data = env_coord_sig, aes(x = 2*NMDS1, y = 2*NMDS2), colour = "grey30", 
-  #          label = row.names(env_coord_sig), inherit.aes = FALSE) + 
-  geom_point(data=centroid, mapping = aes(x=axis1, y=axis2, color=TRAT2), shape=19, alpha=0.9, size=5, inherit.aes = FALSE) +
-  scale_color_manual(values=cols_3) +
-  theme_minimal()+
-  theme(
-    panel.background = element_blank(),
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank()
-  )
-ggsave("nmds_whole2.png")
-
-ggplot(star, aes(x=NMDS1, xend=centroid1, 
-                 y=NMDS2, yend=centroid2, color=TRAT2)) +
-  #geom_segment(aes(x = 0, y = 0, xend = 2*NMDS1, yend = 2*NMDS2), 
-  #             data = env_coord_sig, size =1.1, alpha=0.7, color = "#737373", arrow=arrow(length=unit(0.02, "npc"))) +
-  
-  geom_segment(alpha=0.3) +
-  geom_point(size=3.5, alpha=0.8) +
-  #geom_text(data = env_coord_sig, aes(x = 2*NMDS1, y = 2*NMDS2), colour = "grey30", 
-  #          label = row.names(env_coord_sig), inherit.aes = FALSE) + 
-  #geom_point(data=centroid, mapping = aes(x=axis1, y=axis2, color=TRAT2), shape=19, alpha=0.9, size=5, inherit.aes = FALSE) +
-  scale_color_manual(values=cols_3) +
-  theme_minimal()+
-  theme(
-    panel.background = element_blank(),
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank()
-  )
-ggsave("nmds_coords2.png")
-```
-
-```{r NMDS: ellipses}
-ggplot(metadata_nmds, aes(x=NMDS1, y=NMDS2, color=TRAT2, fill=TRAT2)) +
-  geom_point(size=4, alpha=0.5) +
-  geom_point(data=centroid, mapping = aes(x=axis1, y=axis2, color=TRAT2), shape=15, size=4.5, inherit.aes = FALSE) +
-  stat_ellipse(geom="polygon", level=.7, alpha=.1, layer="background") +
-  scale_color_manual(values=cols_3) +
-  scale_fill_manual(values=cols_3) +
-  theme_minimal()+
-  theme(
-    panel.background = element_blank(),
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank()
-  )
 ```
 
 *SUPPLEMENTARY INFORMATION*
