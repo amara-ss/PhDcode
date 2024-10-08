@@ -62,6 +62,7 @@ descrip <- function(dataset) {
   return(result)
 }
 descrip <- descrip(dataset)
+#write.csv(descrip, "output/descriptive_table.csv")
 ```
 
 ```{r}
@@ -143,7 +144,7 @@ resp_variables <- names(dataset) %>%
               "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105"))
 
 dataset_simple <- dataset %>%
-  dplyr::select(ID, TRAT2, DEPTH, all_of(resp_variables))
+  dplyr::select(ID, SITE, TRAT2, DEPTH, all_of(resp_variables))
 
 #Add pc1 values to the dataframe
 dataset_pc1 <- dataset_simple %>%
@@ -151,12 +152,12 @@ dataset_pc1 <- dataset_simple %>%
 ```
 
 ```{r Exploratory analysis of response variables}
-var <- dataset_pc1$C_N_ratio
-var_log <- (log(dataset_pc1$C_N_ratio)+1)
+var <- dataset_pc1$Cu_mg_Kg_105
+var_log <- (log(dataset_pc1$Ergosterol_µg_g)+1)
 
 #### Visually assessment of data ####
 
-hist(var_log) 
+hist(var) 
 
 dataset_pc1 %>%
   ggplot(aes(x=TRAT2, y=var, fill=DEPTH)) +
@@ -167,18 +168,17 @@ dataset_pc1 %>%
   facet_wrap(~ DEPTH, scales="free_x") 
 ```
  
- - *Log-transformed variables to fit the models*: EC, NH4, NO3, Ca, Mg, Total C, Carbon stock, Nitrogen stock, MBC, Ergosterol
+ - *Log-transformed variables to fit the models*: EC, NH4, NO3, Ca, Mg, Total C, Carbon stock, Nitrogen stock, MBC, Ergosterol, C/N ratio
  
 ```{r Linear Mixed Models}
 ##############################################################
 #### FIRST!! We define the Contrast table we want to work with
 options(contrasts=c(factor="contr.sum", ordered="contr.poly"))
 ##############################################################
-mixed.var <- lmer(var_log ~ TRAT2*DEPTH + (1|SITE), data = dataset_pc1)
+mixed.var <- lmer(var ~ TRAT2*DEPTH + (1|SITE), data = dataset_pc1)
 mixed.null <- lmer(var ~ (1|SITE), data = dataset_pc1)
 anova(mixed.var)
 summary(mixed.var)
-?lmer
 plot(mixed.var)
 
 par(mfrow=c(1,3))
@@ -196,27 +196,15 @@ multcomp::cld(emmeans(mixed.var, ~TRAT2*DEPTH, type="response"), Letters=letters
 ```
 
 ```{r Linear Mixed Models by depth: TOPSOIL}
-var_top <- dataset_topsoil$SOM_per_corregido
-var_log_top <- (log(dataset_topsoil$C_N_ratio)+1)
+models_topsoil <- dataset_pc1 %>% filter(DEPTH=="topsoil")
+var_top <- models_topsoil$Cu_mg_Kg_105
+var_log_top <- (log(models_topsoil$Ergosterol_µg_g)+1)
 
 hist(var_log_top)
 
-## PC1 as fixed effect
-
-mixed.pc1_top <- lmer(var_top ~ pc1_top + (1|SITE), data = dataset_topsoil)
-
-car::Anova(mixed.pc1_top, test.statistic="F", type=3)
-AICc(mixed.pc1_top)
-
-par(mfrow=c(1,3))
-qqnorm(resid(mixed.pc1_top)); qqline(resid(mixed.pc1_top))
-hist(resid(mixed.pc1_top))
-plot(fitted(mixed.pc1_top), resid(mixed.pc1_top)); abline(h=0)
-par(mfrow=c(1,1))
-
 ## TRAT2 as fixed effect
 
-mixed.TRAT2_05 <- lmer(var_log_top ~ TRAT2 + (1|SITE), data = dataset_topsoil)
+mixed.TRAT2_05 <- lmer(var_top ~ TRAT2 + (1|SITE), data = models_topsoil)
 
 par(mfrow=c(1,3))
 qqnorm(resid(mixed.TRAT2_05)); qqline(resid(mixed.TRAT2_05))
@@ -225,34 +213,21 @@ plot(fitted(mixed.TRAT2_05), resid(mixed.TRAT2_05)); abline(h=0)
 par(mfrow=c(1,1))
 
 car::Anova(mixed.TRAT2_05, test.statistic="F", type=3)
-AICc(mixed.TRAT2_05)
 
 multcomp::cld(emmeans(mixed.TRAT2_05, ~TRAT2, type="response"), Letters=letters) #Tuckey's post-hoc test
 
 ```
 
 ```{r Linear Mixed Models by depth: SUBSOIL}
-var_sub <- dataset_subsoil$SOM_per_corregido
-var_log_sub <- (log(dataset_subsoil$C_N_ratio)+1)
+models_subsoil <- dataset_pc1 %>% filter(DEPTH=="subsoil")
+var_sub <- dataset_subsoil$Cu_mg_Kg_105
+var_log_sub <- (log(models_subsoil$Ergosterol_µg_g)+1)
 
 hist(var_log_sub)
 
-## PC1 as fixed effect
-
-mixed.pc1_sub <- lmer(var_log_sub ~ pc1_sub + (1|SITE), data = dataset_subsoil)
-
-car::Anova(mixed.pc1_sub, test.statistic="F", type=3)
-AICc(mixed.pc1_sub)
-
-par(mfrow=c(1,3))
-qqnorm(resid(mixed.pc1_sub)); qqline(resid(mixed.pc1_sub))
-hist(resid(mixed.pc1_sub))
-plot(fitted(mixed.pc1_sub), resid(mixed.pc1_sub)); abline(h=0)
-par(mfrow=c(1,1))
-
 ## TRAT2 as fixed effect
 
-mixed.TRAT2_510 <- lmer(var_log_sub ~ TRAT2 + (1|SITE), data = dataset_subsoil)
+mixed.TRAT2_510 <- lmer(var_sub ~ TRAT2 + (1|SITE), data = models_subsoil)
 
 par(mfrow=c(1,3))
 qqnorm(resid(mixed.TRAT2_510)); qqline(resid(mixed.TRAT2_510))
@@ -261,7 +236,6 @@ plot(fitted(mixed.TRAT2_510), resid(mixed.TRAT2_510)); abline(h=0)
 par(mfrow=c(1,1))
 
 car::Anova(mixed.TRAT2_510, test.statistic="F", type=3)
-AICc(mixed.TRAT2_510)
 
 multcomp::cld(emmeans(mixed.TRAT2_510, ~TRAT2, type="response"), Letters=letters) #Tuckey's post-hoc test
 ```
