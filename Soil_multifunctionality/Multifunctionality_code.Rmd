@@ -630,12 +630,6 @@ cld <- multcompLetters4(lm_f, Tuckeys)
 print(cld) 
 ```
 
-*PERMANOVA* will work with the *raw* numbers in the dissimilarities matrix:
-- *Parametric*
-- It DOES account for interactions
-- The outcome is a *Fisher's F*
-- Recommended for PCA or PCoA
-
 ```{r Multifunctionality: calculated as Byrnes et al. 2022}
 #In this first step we transform four indicators (Heavy Metals) for which lower values mean higher functionality
 asduffy <- dataset_simple %>%
