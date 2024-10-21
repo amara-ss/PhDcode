@@ -19,6 +19,8 @@ pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice
 
 #devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
 library(pairwiseAdonis)
+#devtools::install_github("arleyc/PCAtest")
+library(PCAtest)
 ```
 
 ```{r Read data}
@@ -302,6 +304,66 @@ ordination_dist <- vegdist(ordination_df0, distance="euclidean")
 2) Add all of the underlying environmental data into this new NMDS dataframe
 3) Conduct the Indicator Species Analysis and make a new dataframe with the selected species (variables in this case), and their NMDS scores
 
+```{r NMDS + environmental var}
+set.seed(123)
+nmds<-metaMDS(ordination_df0, distance="euclidean", autotransform=FALSE, k=2)
+
+coordenadas <- as.data.frame(scores(nmds)$sites) 
+variables <- as.data.frame(scores(nmds, "species"))
+
+coordenadas <- coordenadas %>%
+  mutate(DEPTH = as.factor(dataset$DEPTH),
+         TRAT2 = as.factor(dataset$TRAT2))
+
+#Add enviromental data
+env_df <- dataset %>%
+  dplyr::select(all_of(plot_vars))
+
+env <- envfit(nmds, env_df, permutations = 999, na.rm = TRUE)
+
+env_coord0 <- as.data.frame(scores(env, "vectors"))
+env_coord_sig0 <- scores(env, "vectors")[env$vectors$pvals < 0.05, ] #Significant environmental vectors
+
+#Visualization
+metadata_nmds <- inner_join(dataset, coordenadas, by=c("TRAT2"))
+
+centroid <- metadata_nmds %>%
+  group_by(TRAT2) %>%
+  summarize(axis1 = mean(NMDS1), #This will create the centroids
+            axis2 = mean(NMDS2))
+
+star <- metadata_nmds %>%
+  left_join(centroid_top, by = "TRAT2") %>%
+  rename(centroid1 = axis1, centroid2 = axis2)  # Rename centroids for plotting
+
+centroid_top$TRAT2 <- ordered(centroid_top$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+star_top$TRAT2 <- ordered(star_top$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+
+  #Plot (Figure S2)
+ggplot(star, aes(x=NMDS1, xend=centroid1, 
+                 y=NMDS2, yend=centroid2, color=TRAT2)) +
+  geom_point(size=1, alpha=0.1) +
+  geom_segment(alpha=0.1) +
+  geom_point(data=centroid, mapping = aes(x=axis1, y=axis2, color=TRAT2), shape=19,
+  alpha=0.9, size=5, inherit.aes = FALSE) +
+  geom_segment(aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2), 
+               data = env_coord_sig0, size =1.1, alpha=0.7, color = "#737373",
+               arrow=arrow(length=unit(0.02, "npc"))) +
+  #geom_text(data = env_coord_sig0, aes(x = 2*NMDS1, y = 2*NMDS2), colour = "grey30", label = row.names(env_coord_sig0), inherit.aes = FALSE) + 
+  scale_color_manual(values=cols) +
+  scale_fill_manual(values=cols) +
+  theme_minimal()+
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 14),  
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"
+  )
+#ggsave("output/FigureS2.png", height = 5, width = 7, dpi = 300)
+```
+
 ```{r NMDS Topsoil}
 set.seed(123)
 nmds_top<-metaMDS(ordination_df_topsoil, distance="euclidean", autotransform=FALSE, k=2)
@@ -314,15 +376,6 @@ variables_top <- as.data.frame(scores(nmds_top, "species"))
 coordenadas_top <- coordenadas_top %>%
   mutate(DEPTH = as.factor(dataset_topsoil$DEPTH),
          TRAT2 = as.factor(dataset_topsoil$TRAT2))
-
-#Add enviromental data
-env_df <- dataset_topsoil %>%
-  dplyr::select(all_of(plot_vars))
-
-env_top <- envfit(nmds_top, env_df, permutations = 999, na.rm = TRUE)
-
-env_coord <- as.data.frame(scores(env_top, "vectors"))
-env_coord_sig <- scores(env_top, "vectors")[env_top$vectors$pvals < 0.05, ] #Significant environmental vectors
 
 # Indicator species analysis
 set.seed(42)
@@ -413,15 +466,6 @@ coordenadas_sub <- coordenadas_sub %>%
   mutate(DEPTH = as.factor(dataset_subsoil$DEPTH),
          TRAT2 = as.factor(dataset_subsoil$TRAT2))
 
-#Add enviromental data
-env_df <- dataset_subsoil %>%
-  dplyr::select(all_of(plot_vars))
-
-env_sub <- envfit(nmds_sub, env_df, permutations = 999, na.rm = TRUE)
-
-env_coord <- as.data.frame(scores(env_sub, "vectors"))
-env_coord_sig <- scores(env_sub, "vectors")[env_sub$vectors$pvals < 0.05, ] #Significant environmental vectors
-
 # Indicator species analysis
 set.seed(42)
 nmds_sub.ISA <- multipatt(x = ordination_df_subsoil,
@@ -508,7 +552,7 @@ ggplot(star_sub, aes(x = NMDS1, xend = centroid1,
 #ggsave("output/Figure3b_sub.png", height = 5, width = 7, dpi = 300)
 ```
 
-```{r PERMANOVA - Permutational Multivariate Analysis Of Variance }
+```{r PERMANOVA - NMDS }
 #Topsoil
 top_dist <- vegdist(ordination_df_topsoil, distance="euclidean") #distance matrix
 set.seed(43)
@@ -632,7 +676,7 @@ print(cld)
 
 ```{r Multifunctionality: calculated as Byrnes et al. 2022}
 #In this first step we transform four indicators (Heavy Metals) for which lower values mean higher functionality
-asduffy <- dataset_simple %>%
+asduffy <- dataset_pc1 %>%
   dplyr::select(pc1, ID, TRAT2, DEPTH, all_of(resp_variables)) %>%
   dplyr::mutate(Al_g_kg = -1*Al_g_kg + max(Al_g_kg, na.rm=T),
                 Fe_g_Kg = -1*Fe_g_Kg + max(Fe_g_Kg, na.rm=T),
@@ -927,6 +971,8 @@ sig_vars <- names(dataset) %>%
               "Ergosterol_µg_g", "Carbon_stock_Mg_ha", "MBC_mg_kg_105", 
               "Nematode_g_105", "Al_g_kg", "Fe_g_Kg", "Cu_mg_Kg_105"))
 
+dataset$TRAT2 <- ordered(dataset$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+
 dataset %>%
   mutate(ID=row_number()) %>%
   dplyr::select(TRAT2, DEPTH, all_of(sig_vars)) %>%
@@ -976,7 +1022,7 @@ dataset %>%
     strip.background = element_blank(),
     legend.position = "none"
   )
-#ggsave("output/FigureS1.png")
+ggsave("output/FigureS1.png")
 ```
 
 ```{r Multifunctionality: using the raw dataset}
