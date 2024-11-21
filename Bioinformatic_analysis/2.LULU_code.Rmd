@@ -16,6 +16,9 @@ output:
 ```{r Packages}
 #install.packages("pacman")
 pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom")
+
+#install_github("tobiasgf/lulu")
+library(lulu)
 ```
 
 The *LULU algorithm* is a post-clustering curation method aiming at removing erroneous OTUs to achieve meaningful diversity metrics (e.g.: reduce overestimated species richness).
@@ -27,17 +30,15 @@ El fundamento, lo que va a "buscar", son los duplicados de PCR (mutación durant
 *Co-ocurrencia*: para que se le asignen las secuencias hijas a una secuencia madre, la secuencia madre tiene que estar presente
 *Abundancia*: la secuencia madre siempre tiene que ser más abundante que las secuencias hijas
 
-```{r LULU install}
-library(devtools)
-install_github("tobiasgf/lulu")  
-```
-
 ```{r load OTU table}
 #The requirements of LULU are that the OTU table has samples as columns and OTUs as rows, and that it has unique OTU id's as row names.
 
-OTU_table <- read.table("Raw_data_firefungi_soil/dada2_output/asv_table.csv",sep=',', row.names = 1)
-colnames(OTU_table) <- OTU_table[1, ]
-OTU_table <- OTU_table[-1, ]
+OTU_table <- asv_table
+# Set row names first
+rownames(OTU_table) <- OTU_table$...1
+# Now remove the first column, but keep the row names intact
+OTU_table <- OTU_table[ , -1]
+
 OTU_table[] <- lapply(OTU_table, as.numeric) #We need all the values as numbers, no <chr<
 head(OTU_table)
 class(OTU_table)

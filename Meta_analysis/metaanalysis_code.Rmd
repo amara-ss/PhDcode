@@ -1,11 +1,30 @@
+---
+title: "Meta-analysis"
+author: "Amara Santiesteban-Serrano"
+date: " r format(Sys.time(), '%d %B, %Y') "
+output: 
+  html_document:
+    df_print: paged
+    pdf_document: default
+    word_document: default
+  editor_options:
+    chunk_output_type: inline
+---
+
+*Part I*: selecting the studies for the meta-analysis
+
+```{r}
 #install.packages("metagear")
 pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs", "metagear")
+```
 
-# Read the dataset downloaded from the Web of Science
-data_screening1 <- read_xlsx("Meta_analysis/Metaanalysis_dataset.xlsx")
+```{r Read dataset}
+excel_sheets("Metaanalysis_dataset.xlsx") #name of the excel sheets in our file
+data_screening1 <- read_xlsx("Metaanalysis_dataset.xlsx", sheet = "metadata_WOS")
+```
 
-
-# First find duplicates. We make sure that R finds titles that are duplicated despite how they are written:
+```{r Dealing with duplicates}
+#We make sure that R finds titles that are duplicated despite how they are written:
 references_cleaned <- data_screening1 %>%
   mutate(Title = str_to_lower(TITLE),  # Convert to lowercase
          Title = str_replace_all(Title, "[[:punct:]]", ""))  # Remove punctuation
@@ -18,8 +37,9 @@ duplicates <- references_cleaned %>%
 #Remove duplicates:
 references_cleaned <- references_cleaned %>%  
   distinct(Title, .keep_all = TRUE)
+```
 
-#Proceed to abstract screening: 
+```{r Abstract screening}
 effort_distribute(references_cleaned,
                   reviewers = "Amara",
                   initialize = TRUE,
@@ -44,26 +64,70 @@ abstract_screener("Effort_Amara1.csv",
                   "Amara",
                   highlightKeywords = c("fire", "burn", "ectomycorrhiza", 
                                         "mycorrhiza", "fungi"))
+```
 
+```{r}
 #Selected papers for retrieving information (230):
-selected_papers1 <- references_cleaned %>%
+selected_papers <- references_cleaned %>%
   filter(INCLUSION2=="YES")
 #Pdf files available (215):
-downloaded_papers <- selected_papers1 %>%
+downloaded_papers <- selected_papers %>%
   filter(Pdf_available=="YES")
+#Select papers after checking the inclusion criteria (115):
+included_papers <- downloaded_papers %>%
+  filter(INCLUSION3=="YES")
+```
 
-hist(selected_papers2$PUBLICATION_YEAR)
-
-#PRISMA flow-chart:
+```{r PRISMA flow-chart}
 phases <- c("START_PHASE: 573 of studies identified through database searching",
             "564 of studies after duplicates removed",
             "564 of studies with title and abstract screened",
             "EXCLUDE_PHASE: 334 of studies excluded",
             "215 of full-text articles assessed for eligibility",
-            "EXCLUDE_PHASE: # of full-text excluded, not fitting eligibility criteria",
-            "# of studies included in qualitative synthesis",
+            "EXCLUDE_PHASE: 99 of full-text excluded, not fitting eligibility criteria",
+            "115 of studies included in qualitative synthesis",
             "EXCLUDE_PHASE: # studies excluded, incomplete data reported",
             "final # of studies included in quantitative synthesis (meta-analysis)")
 #png("PRISMA_flow_diagram.png", width = 1600, height = 1200, res = 160)
 plot_PRISMA(phases)
 dev.off()
+```
+
+*Part II*: data analysis
+
+```{r}
+ma_dataset <- read_xlsx("Metaanalysis_dataset.xlsx", sheet = "extracted_data")
+
+unique_ids <- ma_dataset %>% 
+  distinct(Study_ID, .keep_all = TRUE)
+
+coordinates <- unique_ids %>%
+  dplyr::select(Study_ID, Latitude, Longitude)
+#write.csv(coordinates, "coordinates.csv")
+
+hist(unique_ids$Study_Year)
+ggplot(unique_ids, aes(x=Territory)) +
+  geom_bar() +
+  theme_minimal()
+
+unique_ids %>%
+  count(Study_Year, name = "Record_Count") %>%
+  arrange((Record_Count))
+
+ggplot(ma_dataset, aes(x=Study_Year, fill=Method_ECM_measurement)) +
+       geom_bar() +
+       #scale_fill_manual(values = c("#feb24c", "#f03b20")) +
+       theme_minimal()
+```
+
+
+
+
+
+
+
+
+
+
+
+
