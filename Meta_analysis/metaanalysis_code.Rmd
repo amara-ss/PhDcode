@@ -20,12 +20,12 @@ pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs", "metage
 
 ```{r Read dataset}
 excel_sheets("Metaanalysis_dataset.xlsx") #name of the excel sheets in our file
-data_screening1 <- read_xlsx("Metaanalysis_dataset.xlsx", sheet = "metadata_WOS")
+metadata_WOS <- read_xlsx("Metaanalysis_dataset.xlsx", sheet = "metadata_WOS")
 ```
 
 ```{r Dealing with duplicates}
 #We make sure that R finds titles that are duplicated despite how they are written:
-references_cleaned <- data_screening1 %>%
+references_cleaned <- metadata_WOS %>%
   mutate(Title = str_to_lower(TITLE),  # Convert to lowercase
          Title = str_replace_all(Title, "[[:punct:]]", ""))  # Remove punctuation
 
@@ -83,9 +83,9 @@ phases <- c("START_PHASE: 573 of studies identified through database searching",
             "564 of studies after duplicates removed",
             "564 of studies with title and abstract screened",
             "EXCLUDE_PHASE: 334 of studies excluded",
-            "215 of full-text articles assessed for eligibility",
-            "EXCLUDE_PHASE: 99 of full-text excluded, not fitting eligibility criteria",
-            "115 of studies included in qualitative synthesis",
+            "212 of full-text articles assessed for eligibility",
+            "EXCLUDE_PHASE: 98 of full-text excluded, not fitting eligibility criteria",
+            "111 of studies included in qualitative synthesis",
             "EXCLUDE_PHASE: # studies excluded, incomplete data reported",
             "final # of studies included in quantitative synthesis (meta-analysis)")
 #png("PRISMA_flow_diagram.png", width = 1600, height = 1200, res = 160)
@@ -105,19 +105,40 @@ coordinates <- unique_ids %>%
   dplyr::select(Study_ID, Latitude, Longitude)
 #write.csv(coordinates, "coordinates.csv")
 
-hist(unique_ids$Study_Year)
-ggplot(unique_ids, aes(x=Territory)) +
+ggplot(unique_ids, aes(x=fct_infreq(Research_type), fill=Research_type)) +
   geom_bar() +
-  theme_minimal()
+  theme_minimal() +
+  labs(x = "Year", y = "Count")
+#ggsave("years_meta.png")
+
+ggplot(downloaded_papers, aes(x=fct_rev(fct_infreq(Country)), fill=INCLUSION3)) +
+  geom_bar() +
+  coord_flip()+
+  theme_minimal() +
+  labs(x = "Territory", y = "Count")
+#ggsave("countries_meta.png")
+
+ggplot(unique_ids, aes(x = Year_of_fire, fill = Year_of_fire)) +
+  geom_bar() +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
 
 unique_ids %>%
   count(Study_Year, name = "Record_Count") %>%
   arrange((Record_Count))
 
-ggplot(ma_dataset, aes(x=Study_Year, fill=Method_ECM_measurement)) +
-       geom_bar() +
+ggplot(unique_ids, aes(x="", y=Research_type, fill=Research_type)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) +
+  scale_fill_brewer(palette="Set1")+
+  theme_void()
+
+ggplot(ma_dataset, aes(x=Study_Year, fill=Sample_type)) +
+       geom_bar(stat = "count") +
        #scale_fill_manual(values = c("#feb24c", "#f03b20")) +
-       theme_minimal()
+       theme_minimal()+
+  labs(x = "Study year", y = "Count")
 ```
 
 
