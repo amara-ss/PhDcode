@@ -70,10 +70,10 @@ abstract_screener("Effort_Amara1.csv",
 #Selected papers for retrieving information (230):
 selected_papers <- references_cleaned %>%
   filter(INCLUSION2=="YES")
-#Pdf files available (215):
+#Pdf files available (212):
 downloaded_papers <- selected_papers %>%
   filter(Pdf_available=="YES")
-#Select papers after checking the inclusion criteria (115):
+#Select papers after checking the inclusion criteria (110):
 included_papers <- downloaded_papers %>%
   filter(INCLUSION3=="YES")
 ```

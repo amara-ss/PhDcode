@@ -15,7 +15,8 @@ The code is structured in the same order as the results of the article
 
 ```{r Packages}
 #install.packages("pacman")
-pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "vegan", "hrbrthemes", "indicspecies", "GGally")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "vegan", "hrbrthemes", "indicspecies", "GGally", "rpart", "rpart.plot", 
+               "irr", "evtree", "randomForest")
 
 #devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
 library(pairwiseAdonis)
@@ -582,11 +583,11 @@ soil_functions <- std_response %>%
   dplyr::group_by(ID,TRAT2, DEPTH) %>% #We need to include ID because we want an individual value of Soil Function per sample
   dplyr::mutate(
     Soil_properties = mean(c(pH_standardized, EC_standardized, Bulk_density_g_cm3_standardized), na.rm = TRUE),
-    Nutrient_pools = mean(c(A_phosphorus_ppm_105_standardized, NH4_mgL_105_standardized, NO3_mgL_105_standardized, Ntotal_g_100g_105_standardized, Nitrogen_stock_Mg_ha_standardized, C_N_ratio_standardized, Ca_g_kg_standardized, K_g_kg_standardized, Mg_g_kg_standardized, Na_g_kg_standardized), na.rm = TRUE),
-    Soil_carbon = mean(c(Ctotal_g_100g_105_standardized, SOM_per_corregido_standardized, Carbon_stock_Mg_ha_standardized), na.rm = TRUE),
-    Soil_activity = mean(c(Phosphatase_activity_µmol_g_h_standardized, MBC_mg_kg_105_standardized), na.rm = TRUE),
-    Heavy_metals = mean(c(Al_g_kg_standardized, Cu_mg_Kg_105_standardized, Fe_g_Kg_standardized, Zn_mg_Kg_105_standardized), na.rm = TRUE),
-    Soil_biota = mean(c(Nematode_g_105_standardized, Ergosterol_µg_g_standardized), na.rm = TRUE))
+    Soil_fertility = mean(c(A_phosphorus_ppm_105_standardized, NH4_mgL_105_standardized, NO3_mgL_105_standardized, Ntotal_g_100g_105_standardized, Nitrogen_stock_Mg_ha_standardized, C_N_ratio_standardized, Ca_g_kg_standardized, K_g_kg_standardized, Mg_g_kg_standardized, Na_g_kg_standardized), na.rm = TRUE),
+    Carbon_sequestration = mean(c(Ctotal_g_100g_105_standardized, SOM_per_corregido_standardized, Carbon_stock_Mg_ha_standardized), na.rm = TRUE),
+    Nutrient_cycling = mean(c(Phosphatase_activity_µmol_g_h_standardized, MBC_mg_kg_105_standardized), na.rm = TRUE),
+    Metals = mean(c(Al_g_kg_standardized, Cu_mg_Kg_105_standardized, Fe_g_Kg_standardized, Zn_mg_Kg_105_standardized), na.rm = TRUE),
+    Soil_biodiversity = mean(c(Nematode_g_105_standardized, Ergosterol_µg_g_standardized), na.rm = TRUE))
 
 #### Summarise by fire severity and depth
 soil_functions_sum <- soil_functions %>%
@@ -594,36 +595,36 @@ dplyr::group_by(TRAT2, DEPTH) %>%
 dplyr::summarise(
         SE_soil_properties = se(Soil_properties), #SE before mean because otherwise will try to calculate it over the mean and the outcome will be NAs      
         Soil_properties = mean(Soil_properties),
-        SE_nutrient_pools = se(Nutrient_pools), 
-        Nutrient_pools = mean(Nutrient_pools),
-        SE_soil_carbon = se(Soil_carbon), 
-        Soil_carbon = mean(Soil_carbon),
-        SE_soil_activity = se(Soil_activity), 
-        Soil_activity = mean(Soil_activity),
-        SE_heavy_metals = se(Heavy_metals), 
-        Heavy_metals = mean(Heavy_metals),
-        SE_soil_biota = se(Soil_biota),
-        Soil_biota = mean(Soil_biota)
+        SE_Soil_fertility = se(Soil_fertility), 
+        Soil_fertility = mean(Soil_fertility),
+        SE_Carbon_sequestration = se(Carbon_sequestration), 
+        Carbon_sequestration = mean(Carbon_sequestration),
+        SE_Nutrient_cycling = se(Nutrient_cycling), 
+        Nutrient_cycling = mean(Nutrient_cycling),
+        SE_metals = se(Metals), 
+        Metals = mean(Metals),
+        SE_Soil_biodiversity = se(Soil_biodiversity),
+        Soil_biodiversity = mean(Soil_biodiversity)
         )
 
 # 3) Reshape the data from wide to long format to plot it
 soil_long <- soil_functions_sum %>%
   pivot_longer(cols = c(Soil_properties, 
-                        Nutrient_pools, 
-                        Soil_carbon, 
-                        Soil_activity, 
-                        Heavy_metals, 
-                        Soil_biota),
+                        Soil_fertility, 
+                        Carbon_sequestration, 
+                        Nutrient_cycling, 
+                        Metals, 
+                        Soil_biodiversity),
                         names_to = "Soil_function", values_to = "Mean") %>%
   dplyr::select(TRAT2, DEPTH, Soil_function, Mean)
   
 soil_long_se <- soil_functions_sum %>%
   pivot_longer(cols = c(SE_soil_properties, 
-                        SE_nutrient_pools, 
-                        SE_soil_carbon, 
-                        SE_soil_activity, 
-                        SE_heavy_metals, 
-                        SE_soil_biota),
+                        SE_Soil_fertility, 
+                        SE_Carbon_sequestration, 
+                        SE_Nutrient_cycling, 
+                        SE_metals, 
+                        SE_Soil_biodiversity),
                         names_to = "SE_function", values_to = "SE") %>%
   dplyr::select(TRAT2, DEPTH,SE)
 
@@ -632,17 +633,18 @@ soil_long$SE <- soil_long_se$SE
 
 ##### Plot preparation
 soil_long$Soil_function <- factor(soil_long$Soil_function, 
-                           levels = c("Soil_properties", "Nutrient_pools",
-                                      "Soil_carbon", "Soil_activity",
-                                      "Soil_biota", "Heavy_metals"))
+                           levels = c("Soil_properties", "Soil_fertility",
+                                      "Carbon_sequestration", "Nutrient_cycling",
+                                      "Soil_biodiversity", "Metals"))
 soil_long$TRAT2 <- ordered(soil_long$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
 soil_long$DEPTH <- ordered(soil_long$DEPTH, levels=c("topsoil", "subsoil"))
 
 # 4) Plot visualization (FIGURE 4):
-ggplot(soil_long, aes(x = TRAT2, y = Mean, fill = DEPTH)) +
-  geom_bar(stat = "identity", position = "dodge", color = "black", alpha=0.4) +
+ggplot(soil_long, aes(x = TRAT2, y = Mean, fill = TRAT2, alpha=DEPTH)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black") +
   geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), position = position_dodge(0.9), width = 0.25) +
-  scale_fill_manual(values = c("#969696", "#f0f0f0")) +
+  scale_fill_manual(values = cols) +
+  scale_alpha_manual(values = c("topsoil" = 0.8, "subsoil" = 0.5)) +
   facet_grid(Soil_function~DEPTH, scales = "free_x") +  
   labs(x = "Treatment", y = "Mean ± SE") +  # Removed the title from labs
   theme_minimal() +
@@ -657,15 +659,15 @@ ggplot(soil_long, aes(x = TRAT2, y = Mean, fill = DEPTH)) +
     axis.line.x = element_line(color = "black"),  # Ensure the x-axis line shows up in all plots
     legend.position = "none"  # Remove the legend
   )
-#ggsave("output/Figure4.png", width = 3, height = 7, dpi = 300)
+#ggsave("output/Figure4_color.png", width = 3, height = 7, dpi = 300)
 
 ##### Linear models
-soil_functions_sub <- soil_functions %>%
+soil_functions_top <- soil_functions %>%
   filter(DEPTH=="topsoil")
 
-var_func <- soil_functions_sub$Heavy_metals
+var_func <- soil_functions$Soil_properties
 
-lm_f <- aov(var_func ~ TRAT2, data = soil_functions_sub)
+lm_f <- aov(var_func ~ TRAT2*DEPTH, data = soil_functions)
 summary(lm_f)
 anova(lm_f)
 Tuckeys<- TukeyHSD(lm_f)
@@ -690,12 +692,12 @@ asduffy <-asduffy %>%
   getFuncsMaxed(resp_variables,
                 threshmin=0.8, threshmax=0.8)
 
-duffyAllVars.std <- paste0(resp_variables, ".std")
+duffyAllVars0.std <- paste0(resp_variables, ".std")
 
 #now effective number of functions
 asduffy <- asduffy %>%
-  mutate(n_eff_func_1 = eff_num_func(., duffyAllVars.std, q = 1),
-         n_eff_func_2 = eff_num_func(., duffyAllVars.std, q = 2),
+  mutate(n_eff_func_1 = eff_num_func(., duffyAllVars0.std, q = 1),
+         n_eff_func_2 = eff_num_func(., duffyAllVars0.std, q = 2),
          mf_eff_1 = n_eff_func_1 * meanFunction,
          mf_eff_2 = n_eff_func_2 * meanFunction
   )
@@ -745,6 +747,68 @@ asduffy %>%
 #ggsave("output/Figure5.png")
 ```
 
+```{r Multifunctionality calculated for soil functions}
+func_variables <- names(soil_functions) %>% 
+  intersect(c("Soil_properties", "Soil_fertility",
+              "Carbon_sequestration", "Nutrient_cycling",
+              "Soil_biodiversity", "Metals"))
+
+#Add pc1 values to the dataframe
+soil_functions$pc1 <- pc1$pc1
+
+asduffy_func <- as.data.frame(soil_functions) %>%
+  dplyr::select(pc1, ID, TRAT2, DEPTH, all_of(func_variables))
+                
+asduffy_func <- asduffy_func %>%
+  dplyr::mutate(Metals = 1 - Metals)
+  
+asduffy_func <- asduffy_func %>%
+  cbind(getStdAndMeanFunctions(asduffy_func, func_variables)) 
+
+asduffy_func <-asduffy_func %>%
+  getFuncsMaxed(func_variables,
+                threshmin=0.7, threshmax=0.7)
+
+duffyAllVars1.std <- paste0(func_variables, ".std")
+
+#now effective number of functions
+asduffy_func <- asduffy_func %>%
+  mutate(n_eff_func_1 = eff_num_func(., duffyAllVars1.std, q = 1),
+         n_eff_func_2 = eff_num_func(., duffyAllVars1.std, q = 2),
+         mf_eff_1 = n_eff_func_1 * meanFunction,
+         mf_eff_2 = n_eff_func_2 * meanFunction
+  )
+
+asduffy_func$TRAT2 <- ordered(asduffy_func$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+asduffy_func$DEPTH <- ordered(asduffy_func$DEPTH, levels=c("topsoil", "subsoil"))
+
+#plot
+asduffy_func %>%
+  dplyr::select(ID, pc1, DEPTH, TRAT2,
+         mf_eff_1) %>%
+  ggplot(aes(x = pc1, y = mf_eff_1,
+             color = TRAT2)) +
+  
+  stat_smooth(method = "lm", color = "#969696", alpha=0.2) +
+  stat_summary(fun.data = mean_se, size=1, shape=19, alpha=0.7) +
+  #geom_point(size = 4, shape = 21, color = "white", alpha=0.8) +  # Set color for the point borders
+  scale_color_manual(values = cols) +
+  facet_wrap(~DEPTH, ncol = 2, scales = "fixed") +
+  theme_minimal()+
+  theme(
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    strip.placement = "outside",  # Place strip labels outside the plot
+    strip.background = element_blank()  # Remove strip background
+  ) +
+  scale_x_reverse()
+#ggsave("output/Figure5'.png")
+```
+
 ```{r Clean multifunctionality dataframe}
 clean_multifunc <- asduffy %>%
   dplyr::select(pc1, ID, TRAT2, DEPTH, meanFunction, thresholds, nFunc, funcMaxed, mf_eff_1)
@@ -761,12 +825,13 @@ For this analysis, we ran five competing models: 1. no effects (null model), 2. 
 lm.multifunc1 <- lm(mf_eff_1~1, asduffy)
 lm.multifunc2 <- lm(mf_eff_1~TRAT2, asduffy)
 lm.multifunc3 <- lm(mf_eff_1~DEPTH, asduffy)
-lm.multifunc4 <- aov(mf_eff_1~TRAT2*DEPTH, asduffy)
+lm.multifunc4 <- lm(mf_eff_1~TRAT2*DEPTH, asduffy_func)
 lm.multifunc5 <- lm(mf_eff_1~TRAT2+DEPTH, asduffy)
 lm.multifunc6 <- lm(mf_eff_1~pc1+DEPTH, asduffy)
 
 AIC(lm.multifunc1, lm.multifunc2, lm.multifunc3, lm.multifunc4, lm.multifunc5, lm.multifunc6)
-summary(lm.multifunc6) 
+summary(lm.multifunc4)
+
 anova(lm.multifunc4)
 
 Tuckeys<- TukeyHSD(lm.multifunc4)
@@ -774,6 +839,279 @@ print(Tuckeys)
 
 cld <- multcompLetters4(lm.multifunc4, Tuckeys)
 print(cld) 
+```
+
+```{r RandomForest}
+#write.csv(asduffy[, c(29:52, 59)], "output/RF_indicators.csv")
+RF_indicators <- asduffy[, c(29:52, 59)]
+str(RF_indicators)
+#write.csv(asduffy_func[, c(11:16, 23)], "output/RF_functions.csv")
+RF_functions <- asduffy_func[, c(11:16, 23)]
+
+summary(RF_indicators$mf_eff_1)
+names(RF_indicators)
+
+data <- RF_indicators
+# entrenamos modelo
+RFfit<- randomForest(mf_eff_1 ~ ., data=data, ntree=300, importance=T) # necesario importance=T para guardar el valor de las importancias
+#IFd es la variable objeto, tu debes de poner el nombre de tu variable objeto
+
+# Para asegurarnos de que se estabilizó el error
+# Representa el error en vez de R2. si no se estabiliza el error igual hay que aumentar el numero de arboles, suele ser 500
+plot(RFfit)
+
+
+# Determinar la importancia de las variables
+png("RFfit_plot.png", width = 800, height = 600)
+varImpPlot(RFfit)
+dev.off()
+#incMSE indica el error por permutacion
+#incNodePurity indica la capacidad de esa variable para separar nodos
+
+# Cargar funcion Uniqueness_Imp_Function, este script debe estar guardado en la carpeta de trabajo
+source("Uniqueness_Imp_Function.R")
+
+# se aplica a data (indicar la posición de la variable objetivo, en este caso es la primera columna)
+uniqueness_imp(data, target_column_position = 25, ntree = 300)
+```
+
+```{r Vertical distribution of soil}
+#Calculation of the difference among depths
+depth_dif <- dataset %>%
+  dplyr::select(SITE, TRAT2, DEPTH, all_of(resp_variables)) %>%
+  group_by(SITE,TRAT2) %>%
+  dplyr::summarize(across(all_of(resp_variables), 
+                   ~ mean(.[DEPTH == "topsoil"]) - mean(.[DEPTH == "subsoil"]),
+                   .names = "{.col}_difference"))
+
+depth_dif_sum <- depth_dif %>%
+  group_by(TRAT2) %>%
+  summarize(across(ends_with("_difference"), list(mean = mean, se = se)))
+#write.csv(depth_dif_sum, "output/vertical_differences.csv")
+
+# 3) Reshape the data from wide to long format to plot it
+depth_long <- depth_dif_sum %>%
+  pivot_longer(cols = ends_with("_mean"),
+               names_to = "variables", 
+               values_to = "Mean") %>%
+  dplyr::select(TRAT2, variables, Mean)
+  
+depth_long_se <- depth_dif_sum %>%
+  pivot_longer(cols = ends_with("_se"),
+               names_to = "SE_function", 
+               values_to = "SE") %>%
+  dplyr::select(TRAT2, SE)
+
+## Add the SE to the dataframe
+depth_long$SE <- depth_long_se$SE
+
+##### Visualization 
+depth_long_filtered <- depth_long %>%
+  filter(variables %in% c("pH_difference_mean", "EC_difference_mean",
+                          "A_phosphorus_ppm_105_difference_mean", 
+                          "NO3_mgL_105_difference_mean",
+                          "Phosphatase_activity_µmol_g_h_difference_mean",
+                          "Ergosterol_µg_g_difference_mean",
+                          "Nematode_g_105_difference_mean",
+                          "SOM_per_corregido_difference_mean",
+                          "Ctotal_g_100g_105_difference_mean",
+                          "Bulk_density_g_cm3_difference_mean"))
+
+depth_long_filtered$variables <- factor(depth_long_filtered$variables, 
+                           levels = c("pH_difference_mean",
+                                      "A_phosphorus_ppm_105_difference_mean",
+                                      "EC_difference_mean", "NO3_mgL_105_difference_mean",
+                                      "Ergosterol_µg_g_difference_mean",
+                                      "Nematode_g_105_difference_mean",
+                                      "SOM_per_corregido_difference_mean",
+                                      "Ctotal_g_100g_105_difference_mean",
+                                      "Phosphatase_activity_µmol_g_h_difference_mean",
+                                      "Bulk_density_g_cm3_difference_mean"))
+depth_long_filtered$TRAT2 <- ordered(depth_long_filtered$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+
+#Plot (Figure 6)
+ggplot(depth_long_filtered, aes(x = TRAT2, y = Mean, fill = TRAT2)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black", alpha = 0.7) +
+  geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), position = position_dodge(0.9), width = 0.25) +
+  scale_fill_manual(values = cols) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    strip.placement = "outside",  # Place strip labels outside the plot
+    strip.background = element_blank(),
+    legend.position = "none"
+  ) +
+  facet_wrap(~ variables, ncol = 2, scales="free_y")
+#ggsave("output/Figure6.png", height = 7, width = 6.5, dpi = 300)
+
+##### Linear models
+var_dif <- depth_dif$pH_difference
+
+lm_f <- aov(var_dif ~ TRAT2, data = depth_dif)
+summary(lm_f)
+anova(lm_f)
+Tuckeys<- TukeyHSD(lm_f)
+print(Tuckeys)
+
+cld <- multcompLetters4(lm_f, Tuckeys)
+print(cld) 
+```
+
+*SUPPLEMENTARY INFORMATION*
+
+```{r Visualization of variables}
+# We only want to plot the significative ones:
+sig_vars <- names(dataset) %>% 
+  intersect(c("SOM_per_corregido", 
+                                       "Ctotal_g_100g_105",
+                                       "NH4_mgL_105",
+                                       "A_phosphorus_ppm_105",
+                                       "MBC_mg_kg_105", 
+                                       "Phosphatase_activity_µmol_g_h",
+                                       "Nematode_g_105",
+                                       "Ergosterol_µg_g",
+                                       "pH", "EC",
+              "Al_g_kg", "Fe_g_Kg"))
+
+dataset$TRAT2 <- ordered(dataset$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+
+dataset %>%
+  mutate(ID=row_number()) %>%
+  dplyr::select(TRAT2, DEPTH, all_of(sig_vars)) %>%
+  pivot_longer(all_of(sig_vars)) %>%
+  #now a plot
+  ggplot(aes(x = TRAT2, y = value, fill=DEPTH,
+             color = TRAT2)) +
+  stat_summary(shape=21, size=0.7, fun.data = mean_se) +
+  stat_smooth(method = "lm", color = "black") +
+  facet_wrap(vars(forcats::fct_relevel(name, "SOM_per_corregido", 
+                                       "Ctotal_g_100g_105",
+                                       "NH4_mgL_105",
+                                       "A_phosphorus_ppm_105",
+                                       "MBC_mg_kg_105", 
+                                       "Phosphatase_activity_µmol_g_h",
+                                       "Nematode_g_105",
+                                       "Ergosterol_µg_g",
+                                       "pH", "EC",
+                                       "Al_g_kg", "Fe_g_Kg")), 
+             scale = "free", strip.position = "left", ncol=2)+
+
+  scale_color_manual(values= cols) +
+  scale_fill_manual(values = c("topsoil" = cols, "subsoil" = "white")) +  
+  labs(y = " ", x = "") +
+  theme(legend.position = "none")+
+  theme_minimal()+
+  theme(
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    strip.placement = "outside",  # Place strip labels outside the plot
+    strip.background = element_blank(),
+    legend.position = "none"
+  )
+#ggsave("output/FigureS1.png", width = 5, height = 6.5, dpi = 300)
+```
+
+```{r Multifunctionality: using the raw dataset}
+# With this approach we can see how the best performance is achieved by those plots with more functions reaching their maximum
+
+#This function iterates over all functions and standardizes them between 0 and 1. Then it creates an averaged multifunctionality index 
+#by averaging over all standardized functions
+raw_standardized_df <- Firefungi_simple %>%
+  cbind(getStdAndMeanFunctions(Firefungi_simple, selected_vars)) 
+
+#Here we account for the number of functions that go over the 0.8 threshold
+raw_standardized_df <-raw_standardized_df %>%
+  getFuncsMaxed(selected_vars,
+                threshmin=0.8, threshmax=0.8)
+
+selected_vars.std <- paste0(selected_vars, ".std")
+
+#Now effective number of functions
+Firefungi_mult <- raw_standardized_df %>%
+  mutate(n_eff_func_1 = multifunc::eff_num_func(., selected_vars.std, q = 1),
+         n_eff_func_2 = multifunc::eff_num_func(., selected_vars.std, q = 2),
+         
+         mf_eff_1 = n_eff_func_1 * meanFunction,
+         mf_eff_2 = n_eff_func_2 * meanFunction)
+
+#Visualization of multifunctionality
+Firefungi_mult$TRAT2 <- ordered(Firefungi_mult$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+Firefungi_mult$DEPTH <- ordered(Firefungi_mult$DEPTH, levels=c("topsoil", "subsoil"))
+Firefungi_mult %>%
+  dplyr::select(TRAT2, DEPTH, 
+                mf_eff_1) %>%
+ 
+  #now a plot
+  ggplot(aes(x = TRAT2, y = mf_eff_1,
+             color = TRAT2)) +
+  stat_summary(fun.data = mean_se) +
+  stat_smooth(method = "lm", color = "black") +
+  facet_wrap(~DEPTH) +
+  scale_color_manual(values = cols_3) +
+  labs(y = "Effective Multifunctionality", x="",
+       color = "Fire Severity") +
+  theme_bw()
+#ggsave("mult_raw_dataset.png")
+```
+
+```{r Multifunctionality: Grouping in Ecosystem functions as in Lucas-Borja et al. 2021 (same as Maestre 2012)}
+Lucas_broja_norm <- Firefungi_simple %>%
+  group_by(TRAT2, DEPTH) %>%
+  mutate(Support = mean(c(pH, EC)),
+         Nutrient_cycling = mean(c(A_phosphorus_ppm_105,NH4_mgL_seco_105, NO3_mgL_seco_105, Ntotal_g_kg, Ca_g_kg, K_g_kg, Mg_g_kg, Na_g_kg)),
+         Climate_reg = mean(c(Ctotal_g_kg, Organic_matter_percent_corregido)),
+         Waste_decomp = mean(c(Phosphatase_activity_µmol_g_h, Cmicrob_mg_kg_SECO_105)),
+         Soil_health = mean(c(Nematode_gr_seco_105, Ergosterol_µg_g))) %>%
+  ungroup()
+
+ecosystem_functions <- Lucas_broja_norm %>%
+  dplyr::select(TRAT2, DEPTH, Support, Nutrient_cycling, Climate_reg, Waste_decomp, Soil_health)
+
+EF <- names(ecosystem_functions) %>% 
+  intersect(c("Support", "Nutrient_cycling", "Climate_reg", "Waste_decomp", "Soil_health"))
+
+ecosystem_functions <- ecosystem_functions %>%
+  mutate(across(all_of(EF), 
+                ~ rescale(., to=c(0,1)),
+                .names = "{.col}_normalized"))
+
+ecosystem_functions <- ecosystem_functions %>%
+  mutate(across(all_of(paste0(EF, "_normalized")), 
+                ~ (.-mean(.))/sd(.),
+                .names = "{.col}_zscore"))
+
+EF <- names(ecosystem_functions) %>% 
+  intersect(c("Support_normalized_zscore", "Nutrient_cycling_normalized_zscore", "Climate_reg_normalized_zscore", "Waste_decomp_normalized_zscore", "Soil_health_normalized_zscore"))
+
+#Plot
+ecosystem_functions %>%
+  dplyr::select(TRAT2, DEPTH, all_of(EF)) %>%
+  pivot_longer(all_of(EF), names_to = "Variable", values_to = "Value") %>%
+  ggplot(aes(x = TRAT2, y = Value, fill = DEPTH)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Mean Values by TRAT2 and DEPTH",
+       x = "TRAT2",
+       y = "Mean Value") +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 2) +
+  theme_bw()
+
+#######################
+ecosystem_functions %>%                              
+  group_by(TRAT2) %>% 
+  summarize(min = min(Soil_health_normalized_zscore),
+            median = median(Soil_health_normalized_zscore),
+            mean = mean(Soil_health_normalized_zscore),
+            max = max(Soil_health_normalized_zscore), 
+            sv = sd(Soil_health_normalized_zscore),
+            se = sd(Soil_health_normalized_zscore) / sqrt(n()),  
+           )
 ```
 
 ```{r Deviation of values from UB mean}
@@ -872,253 +1210,6 @@ deviations_df_c %>%
   xlim(-2.5, 2.5)+
   theme_classic() 
 #ggsave("deviations_Properties.png")
-```
-
-```{r Vertical distribution of soil}
-#Calculation of the difference among depths
-depth_dif <- dataset %>%
-  dplyr::select(SITE, TRAT2, DEPTH, all_of(resp_variables)) %>%
-  group_by(SITE,TRAT2) %>%
-  dplyr::summarize(across(all_of(resp_variables), 
-                   ~ mean(.[DEPTH == "topsoil"]) - mean(.[DEPTH == "subsoil"]),
-                   .names = "{.col}_difference"))
-
-depth_dif_sum <- depth_dif %>%
-  group_by(TRAT2) %>%
-  summarize(across(ends_with("_difference"), list(mean = mean, se = se)))
-#write.csv(depth_dif_sum, "output/vertical_differences.csv")
-
-# 3) Reshape the data from wide to long format to plot it
-depth_long <- depth_dif_sum %>%
-  pivot_longer(cols = ends_with("_mean"),
-               names_to = "variables", 
-               values_to = "Mean") %>%
-  dplyr::select(TRAT2, variables, Mean)
-  
-depth_long_se <- depth_dif_sum %>%
-  pivot_longer(cols = ends_with("_se"),
-               names_to = "SE_function", 
-               values_to = "SE") %>%
-  dplyr::select(TRAT2, SE)
-
-## Add the SE to the dataframe
-depth_long$SE <- depth_long_se$SE
-
-##### Visualization 
-depth_long_filtered <- depth_long %>%
-  filter(variables %in% c("pH_difference_mean", "EC_difference_mean",
-                          "A_phosphorus_ppm_105_difference_mean", 
-                          "NO3_mgL_105_difference_mean",
-                          "Phosphatase_activity_µmol_g_h_difference_mean",
-                          "Ergosterol_µg_g_difference_mean",
-                          "Nematode_g_105_difference_mean",
-                          "SOM_per_corregido_difference_mean",
-                          "Ctotal_g_100g_105_difference_mean",
-                          "Bulk_density_g_cm3_difference_mean"))
-
-depth_long_filtered$variables <- factor(depth_long_filtered$variables, 
-                           levels = c("pH_difference_mean",
-                                      "A_phosphorus_ppm_105_difference_mean",
-                                      "EC_difference_mean", "NO3_mgL_105_difference_mean",
-                                      "Ergosterol_µg_g_difference_mean",
-                                      "Nematode_g_105_difference_mean",
-                                      "SOM_per_corregido_difference_mean",
-                                      "Ctotal_g_100g_105_difference_mean",
-                                      "Phosphatase_activity_µmol_g_h_difference_mean",
-                                      "Bulk_density_g_cm3_difference_mean"))
-depth_long_filtered$TRAT2 <- ordered(depth_long_filtered$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
-
-#Plot (Figure 6)
-ggplot(depth_long_filtered, aes(x = TRAT2, y = Mean, fill = TRAT2)) +
-  geom_bar(stat = "identity", position = "dodge", color = "black", alpha = 0.7) +
-  geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), position = position_dodge(0.9), width = 0.25) +
-  scale_fill_manual(values = cols) +
-  theme_minimal() +
-  theme(
-    panel.grid = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.line = element_line(color = "black"),
-    axis.text = element_text(color = "black"),
-    axis.ticks = element_line(color = "black"),
-    strip.placement = "outside",  # Place strip labels outside the plot
-    strip.background = element_blank(),
-    legend.position = "none"
-  ) +
-  facet_wrap(~ variables, ncol = 2, scales="free_y")
-#ggsave("output/Figure6.png", height = 7, width = 6.5, dpi = 300)
-
-##### Linear models
-var_dif <- depth_dif$pH_difference
-
-lm_f <- aov(var_dif ~ TRAT2, data = depth_dif)
-summary(lm_f)
-anova(lm_f)
-Tuckeys<- TukeyHSD(lm_f)
-print(Tuckeys)
-
-cld <- multcompLetters4(lm_f, Tuckeys)
-print(cld) 
-```
-
-*SUPPLEMENTARY INFORMATION*
-
-```{r Visualization of variables}
-# We only want to plot the significative ones:
-sig_vars <- names(dataset) %>% 
-  intersect(c("EC", "Bulk_density_g_cm3","A_phosphorus_ppm_105", 
-              "Phosphatase_activity_µmol_g_h", "Ntotal_g_100g_105", "C_N_ratio",
-              "NH4_mgL_105","NO3_mgL_105", "Na_g_kg", "SOM_per_corregido",
-              "Ergosterol_µg_g", "Carbon_stock_Mg_ha", "MBC_mg_kg_105", 
-              "Nematode_g_105", "Al_g_kg", "Fe_g_Kg", "Cu_mg_Kg_105"))
-
-dataset$TRAT2 <- ordered(dataset$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
-
-dataset %>%
-  mutate(ID=row_number()) %>%
-  dplyr::select(TRAT2, DEPTH, all_of(sig_vars)) %>%
-  pivot_longer(all_of(sig_vars)) %>%
-  #now a plot
-  ggplot(aes(x = TRAT2, y = value, fill=DEPTH,
-             color = TRAT2)) +
-  stat_summary(shape=21, size=0.7, fun.data = mean_se) +
-  stat_smooth(method = "lm", color = "black") +
-  facet_wrap(vars(forcats::fct_relevel(name, "EC",
-              "Bulk_density_g_cm3","A_phosphorus_ppm_105", 
-              "Phosphatase_activity_µmol_g_h", "Ntotal_g_100g_105", "C_N_ratio",
-              "NH4_mgL_105","NO3_mgL_105", "Na_g_kg", "SOM_per_corregido",
-              "Ergosterol_µg_g", "Carbon_stock_Mg_ha", "MBC_mg_kg_105", 
-              "Nematode_g_105", "Al_g_kg", "Fe_g_Kg", "Cu_mg_Kg_105")), 
-             scale = "free", strip.position = "left", ncol=3,
-             labeller = labeller(.rows = function(variable) c(
-               "EC" = "EC",
-               "Bulk_density_g_cm3" = "Bulk density",
-               "A_phosphorus_ppm_105" = "Available P", 
-               "NH4_mgL_105"="NH4", 
-               "Na_g_kg"= "Na",
-               "NO3_mgL_105"="NO3", 
-               "Ntotal_g_100g_105"="Total N",
-               "C_N_ratio" = "C:N ratio",
-               "SOM_per_corregido"="SOM",
-               "Carbon_stock_Mg_ha"="Carbon stock",
-               "Phosphatase_activity_µmol_g_h"="APA", 
-               "MBC_mg_kg_105"="MBC",  
-               "Ergosterol_µg_g"="Ergosterol", 
-               "Nematode_g_105"="Nematodes",
-               "Al_g_kg"="Al", 
-               "Fe_g_Kg"="Fe",
-               "Cu_mg_Kg_105"="Cu")[variable])) +
-  scale_color_manual(values= cols) +
-  scale_fill_manual(values = c("topsoil" = cols, "subsoil" = "white")) +  
-  labs(y = " ", x = "") +
-  theme(legend.position = "none")+
-  theme_minimal()+
-  theme(
-    panel.grid = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.line = element_line(color = "black"),
-    axis.text = element_text(color = "black"),
-    axis.ticks = element_line(color = "black"),
-    strip.placement = "outside",  # Place strip labels outside the plot
-    strip.background = element_blank(),
-    legend.position = "none"
-  )
-ggsave("output/FigureS1.png")
-```
-
-```{r Multifunctionality: using the raw dataset}
-# With this approach we can see how the best performance is achieved by those plots with more functions reaching their maximum
-
-#This function iterates over all functions and standardizes them between 0 and 1. Then it creates an averaged multifunctionality index 
-#by averaging over all standardized functions
-raw_standardized_df <- Firefungi_simple %>%
-  cbind(getStdAndMeanFunctions(Firefungi_simple, selected_vars)) 
-
-#Here we account for the number of functions that go over the 0.8 threshold
-raw_standardized_df <-raw_standardized_df %>%
-  getFuncsMaxed(selected_vars,
-                threshmin=0.8, threshmax=0.8)
-
-selected_vars.std <- paste0(selected_vars, ".std")
-
-#Now effective number of functions
-Firefungi_mult <- raw_standardized_df %>%
-  mutate(n_eff_func_1 = multifunc::eff_num_func(., selected_vars.std, q = 1),
-         n_eff_func_2 = multifunc::eff_num_func(., selected_vars.std, q = 2),
-         
-         mf_eff_1 = n_eff_func_1 * meanFunction,
-         mf_eff_2 = n_eff_func_2 * meanFunction)
-
-#Visualization of multifunctionality
-Firefungi_mult$TRAT2 <- ordered(Firefungi_mult$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
-Firefungi_mult$DEPTH <- ordered(Firefungi_mult$DEPTH, levels=c("topsoil", "subsoil"))
-Firefungi_mult %>%
-  dplyr::select(TRAT2, DEPTH, 
-                mf_eff_1) %>%
- 
-  #now a plot
-  ggplot(aes(x = TRAT2, y = mf_eff_1,
-             color = TRAT2)) +
-  stat_summary(fun.data = mean_se) +
-  stat_smooth(method = "lm", color = "black") +
-  facet_wrap(~DEPTH) +
-  scale_color_manual(values = cols_3) +
-  labs(y = "Effective Multifunctionality", x="",
-       color = "Fire Severity") +
-  theme_bw()
-#ggsave("mult_raw_dataset.png")
-```
-
-```{r Multifunctionality: Grouping in Ecosystem functions as in Lucas-Borja et al. 2021 (same as Maestre 2012)}
-Lucas_broja_norm <- Firefungi_simple %>%
-  group_by(TRAT2, DEPTH) %>%
-  mutate(Support = mean(c(pH, EC)),
-         Nutrient_cycling = mean(c(A_phosphorus_ppm_105,NH4_mgL_seco_105, NO3_mgL_seco_105, Ntotal_g_kg, Ca_g_kg, K_g_kg, Mg_g_kg, Na_g_kg)),
-         Climate_reg = mean(c(Ctotal_g_kg, Organic_matter_percent_corregido)),
-         Waste_decomp = mean(c(Phosphatase_activity_µmol_g_h, Cmicrob_mg_kg_SECO_105)),
-         Soil_health = mean(c(Nematode_gr_seco_105, Ergosterol_µg_g))) %>%
-  ungroup()
-
-ecosystem_functions <- Lucas_broja_norm %>%
-  dplyr::select(TRAT2, DEPTH, Support, Nutrient_cycling, Climate_reg, Waste_decomp, Soil_health)
-
-EF <- names(ecosystem_functions) %>% 
-  intersect(c("Support", "Nutrient_cycling", "Climate_reg", "Waste_decomp", "Soil_health"))
-
-ecosystem_functions <- ecosystem_functions %>%
-  mutate(across(all_of(EF), 
-                ~ rescale(., to=c(0,1)),
-                .names = "{.col}_normalized"))
-
-ecosystem_functions <- ecosystem_functions %>%
-  mutate(across(all_of(paste0(EF, "_normalized")), 
-                ~ (.-mean(.))/sd(.),
-                .names = "{.col}_zscore"))
-
-EF <- names(ecosystem_functions) %>% 
-  intersect(c("Support_normalized_zscore", "Nutrient_cycling_normalized_zscore", "Climate_reg_normalized_zscore", "Waste_decomp_normalized_zscore", "Soil_health_normalized_zscore"))
-
-#Plot
-ecosystem_functions %>%
-  dplyr::select(TRAT2, DEPTH, all_of(EF)) %>%
-  pivot_longer(all_of(EF), names_to = "Variable", values_to = "Value") %>%
-  ggplot(aes(x = TRAT2, y = Value, fill = DEPTH)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  labs(title = "Mean Values by TRAT2 and DEPTH",
-       x = "TRAT2",
-       y = "Mean Value") +
-  facet_wrap(~ Variable, scales = "free_y", ncol = 2) +
-  theme_bw()
-
-#######################
-ecosystem_functions %>%                              
-  group_by(TRAT2) %>% 
-  summarize(min = min(Soil_health_normalized_zscore),
-            median = median(Soil_health_normalized_zscore),
-            mean = mean(Soil_health_normalized_zscore),
-            max = max(Soil_health_normalized_zscore), 
-            sv = sd(Soil_health_normalized_zscore),
-            se = sd(Soil_health_normalized_zscore) / sqrt(n()),  
-           )
 ```
 
 ```{r Package and functions references}
