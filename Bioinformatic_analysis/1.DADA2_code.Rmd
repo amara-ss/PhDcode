@@ -102,7 +102,7 @@ fnRs.filtN <- file.path(path_firefungi, "filtN", basename(fnRs))
 Filtered <- dada2::filterAndTrim(fnFs, fnFs.filtN, fnRs, fnRs.filtN, maxN = 0, multithread = FALSE) #multithread = TRUE --> this is only for UBUNTU or LINUX so the computer would run it in different threads
 Filtered
 str(Filtered)
-#write.table(Filtered, "Filtered_Ns.txt") # Hacemos estos pasos para sacar un documento txt con las secuencias input iniciales y las output después del filtrado de N (añadir que en los resultados solamente vendrá reflejado los reads de la secuencia forward, por lo que consideramos que es número de reads por pair sequences, es decir, Fwd-Rvs).
+#write.table(Filtered, "Filtered_Ns.txt") # .txt file with initial input sequences and final output sequences after Ns filtering (results will only show number of reads of the Forward sequence, so we consider it as the number of reads of pair sequences, Fwd-Rvs).
 
 #The length variation of the ITS region has significant consequences for the filtering and trimming steps of the standard DADA2 workflow: one of them is that primers can be found within the reads in some cases. We are now ready to count the number of times the primers appear in the forward and reverse read, while considering all possible primer orientations. Identifying and counting the primers on one set of paired end FASTQ files is sufficient, assuming all the files were created using the same library preparation, so we’ll just process the first sample:
 primerHits <- function(primer, fn) {

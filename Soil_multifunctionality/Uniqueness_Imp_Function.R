@@ -15,7 +15,7 @@ uniqueness_imp <- function(data, target_column_position, ntree = 500) {
   
   # Seleccionar las columnas predictoras
   predictor_columns <- setdiff(colnames(data), target_column_name)
-  
+
   # Ajustar el modelo de bosque aleatorio con todas las variables
   full_model <- randomForest(as.formula(paste(target_column_name, "~ .")), data = data, ntree = ntree)
   
