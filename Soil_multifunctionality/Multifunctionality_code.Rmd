@@ -28,6 +28,7 @@ library(PCAtest)
 ```{r Read data}
 dataset <- Firefungi_soil_dataset_2021 #Updated bulk_density data 04/02/2025
 #summary(dataset)
+hola
 
 # Northness and Eastness
 aspect_rad <- dataset$Aspect_degrees * pi / 180
