@@ -17,7 +17,7 @@ output:
 #install.packages("pacman")
 pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom")
 
-#install_github("tobiasgf/lulu")
+install_github("tobiasgf/lulu")
 library(lulu)
 ```
 
@@ -33,11 +33,10 @@ El fundamento, lo que va a "buscar", son los duplicados de PCR (mutación durant
 ```{r load OTU table}
 #The requirements of LULU are that the OTU table has samples as columns and OTUs as rows, and that it has unique OTU id's as row names.
 
-OTU_table <- asv_table
-# Set row names first
-rownames(OTU_table) <- OTU_table$...1
-# Now remove the first column, but keep the row names intact
-OTU_table <- OTU_table[ , -1]
+#First, IMPORT DATASET "Raw_data_firefungi_soil > dada2_output > asv_table.csv
+OTU_table <- as.data.frame(asv_table)
+rownames(OTU_table) <- OTU_table[[1]]  # Asigna la primera columna a los nombres de fila
+OTU_table <- OTU_table[, -1]           # Elimina la primera columna
 
 OTU_table[] <- lapply(OTU_table, as.numeric) #We need all the values as numbers, no <chr<
 head(OTU_table)
@@ -102,9 +101,9 @@ otu_map <- (curated_result$otu_map)
 ```{r Assing taxonomy}
 #For the next step, we need that our taxonomy table matches the curated asv table. To that end, we need to cut out the taxonomy table to only the asv present in the curated table: 
 
-taxa2 <- read.table("F:/asv_tax.csv",sep=',', row.names = 1)
-colnames(taxa2) <- taxa2[1, ]
-taxa2 <- taxa2[-1, ]
+taxa2 <- as.data.frame(asv_tax)
+rownames(taxa2) <- taxa2[[1]]
+taxa2 <- taxa2[,-1]
 
 common_asv <- intersect(row.names(curated_asv_table), row.names(taxa2))
 common_asv
@@ -171,15 +170,15 @@ writeXStringSet(curated_DNAStringSet, "Raw_data_firefungi_soil/curated_FASTA.fas
 ################################################## VSEARCH OUTPUT #####################################################
 
 Reading file curated_FASTA.fasta 100%
-1117998 nt in 4397 seqs, min 80, max 445, avg 254
+1168518 nt in 4634 seqs, min 80, max 445, avg 252
 Masking 100%
 Sorting by abundance 100%
 Counting k-mers 100%
 Clustering 100%
 Sorting clusters 100%
 Writing clusters 100%
-*Clusters: 2855* Size min 1, max 14, avg 1.5
-Singletons: 2022, 46.0% of seqs, 70.8% of clusters
+Clusters: 2908 Size min 1, max 21, avg 1.6
+Singletons: 2076, 44.8% of seqs, 71.4% of clusters
 
 ```{r VSEARCH result}
 #After running VSEARCH with the cluster_size and the centroids functions, we will find 2 outputs in the same folder: the cluster_results.txt and the centroids.fasta. 
@@ -187,15 +186,16 @@ Singletons: 2022, 46.0% of seqs, 70.8% of clusters
     ### cluster_results.txt: C=centroids (reference sequence to create the cluster), H= hits; other sequences assigned to the cluster, S= singletones.
     ### centroids.fasta: This FASTA file contains the centroid sequences, which are the representative sequences for each cluster. These centroids are chosen based on the similarity threshold (97% in this case).
 
-clustered_asv.fasta <- readDNAStringSet("F:/FPI_INIA/ADN/Firefungi_2021/Raw_data_firefungi_soil/dada2_output_soil/centroids.fasta")
+clustered_asv.fasta <- readDNAStringSet("Raw_data_firefungi_soil/centroids.fasta")
 clustered_asv.fasta
 
 # What we need now is a table with each ASV and its abundance per sample, similar to the curated_asv_table:
 # 1) First we will need to identify which ASVs have been clustered in the postclustering
 # 2) Then, we will need to sum up their abundances
 
+curated_asv_table <- as.data.frame(curated_asv_table)
 curated_asv_table <- rownames_to_column(curated_asv_table, var = "centroid_asv")
-cluster_results <- read.table("F:/FPI_INIA/ADN/Firefungi_2021/Raw_data_firefungi_soil/dada2_output_soil/cluster_results.txt")
+cluster_results <- read.table("Raw_data_firefungi_soil/cluster_results.txt")
 ## V2 = the cluster ID. All the ASVs that have been assigned together they will have the same cluster number
 ```
 

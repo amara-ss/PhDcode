@@ -1,0 +1,30 @@
+---
+title: "Bioassay - Obj3 Firefungi"
+author: "Amara Santiesteban Serrano"
+date: " r format(Sys.time(), '%d %B, %Y') "
+output: 
+  html_document:
+    df_print: paged
+    pdf_document: default
+    word_document: default
+  editor_options:
+    chunk_output_type: inline
+---
+
+```{r Packages}
+#install.packages("pacman")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "lmerTest", "emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "vegan", "hrbrthemes", "indicspecies", "GGally", "rpart", "rpart.plot", "irr", "evtree", "randomForest", "rfPermute", "devtools")
+```
+
+```{r}
+data <- AbioticBiotic_Bioassay
+
+data %>%
+  ggplot(aes(x=Efecto, y=colonization_per, fill=Profundidad)) +
+  geom_boxplot(outlier.color = "red",
+    outlier.shape = 8) +
+  scale_fill_brewer(palette="Dark2") +
+  stat_summary(fun= mean, geom="point", shape=20, size=2, colour="black") + 
+  facet_wrap(~ Profundidad, scales="free_x") 
+```
+

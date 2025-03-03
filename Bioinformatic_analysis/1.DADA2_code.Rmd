@@ -28,7 +28,7 @@ The *DADA (Divisive Amplicon Denoising Algorithm)* is a model-based approach for
 ```{r DADA2 install}
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
-BiocManager::install("dada2", version = "3.19")
+BiocManager::install("dada2", version = "3.20")
 
 library(dada2)
 ```
@@ -238,7 +238,7 @@ out %>%
             max_remaining = paste0(round(max(percent_kept), 2), "%"))
 
 #Number of sequences with unidentifyed nucleotides: 
-Filt_N <- dada2::filterAndTrim(fnFs.cutN, fnFs.filtN, fnRs.cutN, fnRs.filtN, maxN = 0, multithread = FALSE, verbose = FALSE)
+#Filt_N <- dada2::filterAndTrim(fnFs.cutN, fnFs.filtN, fnRs.cutN, fnRs.filtN, maxN = 0, multithread = FALSE, verbose = FALSE)
 #write.table(Filtrado, "Filtrado_Ns.txt")
 
 #As a final check of our progress, we’ll look at the number of reads that made it through each step in the pipeline:
@@ -280,7 +280,7 @@ Nuestro output en este punto es todo lo que necesitamos para analizar nuestro se
 
 ```{r replace sequences with ASV}
 
-output_folder <- ("Raw_data_firefungi_soil/dada2_output")
+output_folder <- ("Raw_data_firefungi_soil/dada2_output/")
 # Create the destination folder if it doesn't exist
 if (!dir.exists(output_folder)) {
   dir.create(output_folder, recursive = TRUE)}

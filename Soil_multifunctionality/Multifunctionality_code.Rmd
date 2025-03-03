@@ -416,9 +416,10 @@ hist(resid(lmf_sub))
 plot(fitted(lmf_sub), resid(lmf_sub)); abline(h=0)
 par(mfrow=c(1,1))
 
-car::Anova(lmf_sub, test.statistic="F", type=3)
-
-multcomp::cld(emmeans(lmf_sub, ~TRAT2, type="response"), Letters=letters) #Tuckey's post-hoc test
+posthoc <- glht(lmf_sub, linfct = mcp(TRAT2 = "Tukey"))
+summary(posthoc)
+letters <- cld(posthoc, decreasing = TRUE)  # 'cld()' assigns letters
+print(letters)
 
 ##### Linear models_WHOLE
 lmf <- lmer(Carbon_sequestration ~ TRAT2*DEPTH + (1|SITE), data = soil_functions)
