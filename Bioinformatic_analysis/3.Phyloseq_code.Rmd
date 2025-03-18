@@ -275,6 +275,8 @@ p = p + scale_fill_manual(values=cols)
 p = p + scale_colour_manual(values=cols)
 p
 #ggsave("ord_methods.png")
+
+plist[[3]]
 ```
 
 
