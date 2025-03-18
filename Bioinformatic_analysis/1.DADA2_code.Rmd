@@ -320,10 +320,10 @@ asv_tax_file <- paste0(output_folder, "asv_tax.csv")
 OTU_TAX_table_file <- paste0(output_folder, "OTU_TAX_table.csv")
 
 #writing out output files
-write.table(asv_fasta, asv_fasta_file, sep=",", quote=F, col.names=FALSE,row.names = FALSE)
-write.table(asv_table, asv_table_file, sep=",", quote=F, col.names = NA)
-write.table(asv_tax, asv_tax_file, sep=",", quote=F, col.names=NA)
-write.table(OTU_TAX_table, OTU_TAX_table_file, sep=",", quote=F, col.names=NA)
+#write.table(asv_fasta, asv_fasta_file, sep=",", quote=F, col.names=FALSE,row.names = FALSE)
+#write.table(asv_table, asv_table_file, sep=",", quote=F, col.names = NA)
+#write.table(asv_tax, asv_tax_file, sep=",", quote=F, col.names=NA)
+#write.table(OTU_TAX_table, OTU_TAX_table_file, sep=",", quote=F, col.names=NA)
 ```
 
 DADA2 tiene sentido para afinar a nivel de ASV, es una máquina súper potente. Pero para trabajar con OTUs podríamos usar algoritmos menos profundos como VSEARCH. Pero usamos DADA2 porque está de moda...

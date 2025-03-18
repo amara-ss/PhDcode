@@ -15,7 +15,7 @@ output:
 
 ```{r Packages}
 #install.packages("pacman")
-pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car", "plyr")
 ```
 
 ```{r}
@@ -25,54 +25,150 @@ if (!require("BiocManager", quietly = TRUE))
 BiocManager::install("microbiome")
 ```
 
+```{r Colors}
+cols <- c("#41b6c4","#fd8d3c","#cb181d","#800026")
+```
+
 ```{r data required}
 #########################
-#OTU abundance: *matrix*            class(curated_asv_table)
-#Taxonomy: *matrix*                 class(taxa)
+#OTU abundance: *matrix*            class(clustered_asv_table)
+#Taxonomy: *matrix*                 class(clustered_taxa)
 #Metadata: *data.frame*
+#FunGuild: *matrix*
 ########################
 
 #We need the taxa table and the curated asv table to have the same number of entries
 #We need the meta_data and the curated asv table to have the exact same samples names
 
-meta_data <- as.data.frame(read_xlsx("Raw_data_firefungi_soil/META_SOIL.xlsx", col_names=TRUE))
-head(meta_data)
-# Set the first column as row names
-row.names(meta_data) <- meta_data[, 1]
-# Remove the first column from the data frame
-meta_data <- meta_data[, -1]
-```
-
-```{r}
-#We need to make sure that curated_asv_table column names match the meta_data row names:
-new_col_names <- sapply(names(curated_asv_table), function(name) {
+#####OTU abundance:
+colnames(clustered_asv_table) <- sapply(colnames(clustered_asv_table), function(name) {
   parts <- strsplit(name, "-FIREFUNGI")[[1]]
   return(paste0(parts[1], "-FIREFUNGI"))
 })
-names(curated_asv_table) <- new_col_names
+clustered_asv_table[] <- lapply(clustered_asv_table, as.numeric)
+
+####Taxonomy: 
+class(clustered_tax_table)
+clustered_tax_table <- as.matrix(clustered_tax_table)
+
+####Metadata
+meta_data <- as.data.frame(Firefungi_soil_dataset_2021)
+rownames(meta_data) <- paste0(1:80, "-FIREFUNGI")
+
+####FunGuild
+#FG_matrix <- select(FG, confidenceRanking, trophicMode, guild, growthForm)
+#FG_matrix <- as(as.matrix(FG_matrix),"matrix")
 ```
 
 The *phyloseq package* is a tool to import, store, analyze, and graphically display complex phylogenetic sequencing data that has already been clustered into Operational Taxonomic Units (OTUs), especially when there is associated sample data, phylogenetic tree, and/or taxonomic assignment of the OTUs. This package leverages many of the tools available in R for ecology and phylogenetic analysis (vegan, ade4, ape, picante), while also using advanced/flexible graphic systems (ggplot2) to easily produce publication-quality graphics of complex phylogenetic data. 
 
 ```{r Phyloseq object}
-ps <- phyloseq(otu_table(curated_asv_table, taxa_are_rows=TRUE), 
+ps <- phyloseq(otu_table(clustered_asv_table, taxa_are_rows=TRUE), 
                sample_data(meta_data, sample_names(sample.names)),
-               tax_table(taxa))
+               tax_table(clustered_taxa))
 ps
-#write.csv(taxa, "taxa.csv")
+```
+
+```{r}
+# We make sure that we do not have OTUs that are not present in any of the samples:
+ps0 <- phyloseq::prune_taxa(phyloseq::taxa_sums(ps) > 0, ps)
+
+#We also did a filtering of ASV with less than 5 reads but the result is the same (probably due to LULU & postclustering)
 ```
 
 *ADVICE*: check some sequences (from the 'asv_OTU.fasta' generated in DADA2, they can be accessed through Notepad++) in BLAST: https://blast.ncbi.nlm.nih.gov/Blast.cgi# --> copy and paste the whole sequence in the Entry query sequence box, and click on 'BLAST' at the end. This is a double check to see if our reference database (UNITE in this case) has assigned correctly the taxons.
 
+```{r Alpha Diversity}
+# Observed = Richness: total number of OTU observed in a sample (it does not consider abundance or eveness)
+# Chao1: non-parametric estimator of the minimum species richness. The number of species in a community, accounting for the number of rare species that are likely to be missed
+# Shannon: It measures the diversity of a community by considering both species richness and evenness. Higher values indicate greater diversity, with more even distribution of species abundances.
+
+alpha <- microbiome::alpha(ps, index = c("Observed", "Shannon", "Chao1"))
+
+alpha <- alpha %>% 
+  tibble::rownames_to_column(var = "SampleID")
+
+metadata_df <- meta_data %>% 
+  tibble::rownames_to_column(var = "SampleID")
+
+alpha <- left_join(alpha, metadata_df, by = "SampleID")
+```
+
+```{r Alpha Diversity Models}
+alpha$TRAT2 <- ordered(alpha$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+alpha$DEPTH <- ordered(alpha$DEPTH, levels=c("topsoil", "subsoil"))
+
+### Visually assessment of data
+var <- alpha$diversity_shannon
+
+hist(var) 
+
+alpha %>%
+  ggplot(aes(x=TRAT2, y=var, fill=DEPTH)) +
+  geom_boxplot(outlier.color = "red",
+    outlier.shape = 8) +
+  scale_fill_brewer(palette="Dark2") +
+  stat_summary(fun= mean, geom="point", shape=20, size=2, colour="black") + 
+  facet_wrap(~ DEPTH, scales="free_x") 
+
+#################### WHOLE ##################################
+#### FIRST!! We define the Contrast table we want to work with
+options(contrasts=c(factor="contr.sum", ordered="contr.poly"))
+##############################################################
+mixed.var <- lmer(var ~ TRAT2*DEPTH + (1|SITE), data = alpha)
+
+par(mfrow=c(1,3))
+qqnorm(resid(mixed.var)); qqline(resid(mixed.var))
+hist(resid(mixed.var))
+plot(fitted(mixed.var), resid(mixed.var)); abline(h=0)
+par(mfrow=c(1,1))
+
+car::Anova(mixed.var, test.statistic="F", type=3)
+
+multcomp::cld(emmeans(mixed.var, ~TRAT2, type="response"), Letters= letters) #Tuckey's post-hoc test
+```
+
+-No significant differences found across *DEPTHS*
+-No significant differences in *Shannon diversity* across treatments
+-Significant differences foun in *observed and Chao1 richness*: UB > LS > HS1 > HS2
+
+```{r Alpha Diversity Plot}
+# Specify the desired order of levels for TRAT2
+TRAT2_order <- c("UB", "LS", "HS1", "HS2")  
+# Reorder the levels of TRAT2
+sample_data(ps)$TRAT2 <- factor(sample_data(ps)$TRAT2, levels = TRAT2_order)
+
+plot_richness(ps, color = "TRAT2", x = "TRAT2", 
+              measures = c("Observed", "Shannon", "Chao1")) + 
+  geom_boxplot(aes(fill = TRAT2), alpha=.7) + 
+  scale_color_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) + 
+  scale_fill_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) +
+  theme(
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(),
+    strip.background = element_blank(),  # Remove strip background
+    axis.text.x = element_text(angle = 0.1, hjust = 1),  # Rotate x-axis labels
+    panel.background = element_blank(),  # Remove panel background color
+    plot.background = element_blank(),   # Remove plot background color
+    legend.position = "none"             # Remove legend
+  )
+#ggsave("alpha_div.png")
+```
+
 ```{r Quality analysis}
 # Define prevalence of each taxa (in how many samples did each taxa appear at least once)
-prevdf = apply(X = otu_table(ps1),
-               MARGIN = ifelse(taxa_are_rows(ps1), yes = 1, no = 2),
-               FUN = function(x){sum(x > 0)})
+# Compute prevalence (number of samples where an OTU is present)
+prevdf <- apply(X = otu_table(ps1),
+                MARGIN = ifelse(taxa_are_rows(ps1), yes = 1, no = 2),
+                FUN = function(x) sum(x > 0))
 
-prevdf = data.frame(Prevalence = prevdf,
-                    TotalAbundance = taxa_sums(ps1),
-                    tax_table(ps1))
+prevdf <- data.frame(Prevalence = prevdf, row.names = taxa_names(ps1))
+
+# Add total abundance and taxonomy information
+prevdf <- data.frame(Prevalence = prevdf$Prevalence,
+                     TotalAbundance = phyloseq::taxa_sums(ps1),
+                     as.data.frame(tax_table(ps1)))
 
 #With the following table we can see how well represented is each "Phylum" (or Kingdom, etc...)
 dfprev <- plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
@@ -80,25 +176,18 @@ dfprev <- plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence)
 
 ```{r Filtering: unlikely taxa}
 #Based on the results above, we could decide to filter some Phylum out (the ones with less representation). We can also get rid of the Kingdoms not corresponding to fungi:
-filterKingdom <- c("k__Rhizaria", "k__Metazoa", NA)
-ps1 = subset_taxa(ps, !Kingdom %in% filterKingdom)
-head(otu_table(ps1))
-prevdf1 = subset(prevdf, !Kingdom %in% filterKingdom)
-ps1
 
-filterPhyla <- c("p__Entorrhizomycota", "p__Calcarisporiellomycota", "p__Blastocladiomycota", NA)
-(ps2 = subset_taxa(ps1, !Phylum %in% filterPhyla))   ##Phyloseq object
-prevdf2 = subset(prevdf1, !Phylum %in% filterPhyla)  ##Data.frame
-ps2
+ps1 = phyloseq::subset_taxa(ps, Kingdom=="k__Fungi")
+ps1
 ```
 
 ```{r Visualization}
 # Define prevalence threshold as 5% of total samples 
-prevalenceThreshold = 0.05 * phyloseq::nsamples(ps2)
+prevalenceThreshold = 0.05 * phyloseq::nsamples(ps1)
 prevalenceThreshold
 
 #This plot will help us to identify which taxa are more abundant and prevalent in the dataset.
-ggplot(prevdf2, aes(TotalAbundance, Prevalence, color = Phylum)) + 
+ggplot(prevdf, aes(TotalAbundance, Prevalence, color = Phylum)) + 
   geom_hline(yintercept = prevalenceThreshold, alpha = 0.5, linetype = 2) + 
   geom_point(size = 2, alpha = 0.7) + 
   scale_y_log10() + 
@@ -109,7 +198,7 @@ ggplot(prevdf2, aes(TotalAbundance, Prevalence, color = Phylum)) +
 #ggsave("prevalence.png")
 
 #This will show us the distribution of read counts per sample:
-sample_sum_df <- data.frame(sum = sample_sums(ps2))
+sample_sum_df <- data.frame(sum = sample_sums(ps1))
 ggplot(sample_sum_df, aes(x = sum)) + 
   geom_histogram(color = "black", fill = "grey", binwidth = 2500) +
   ggtitle("Distribution of sample sequencing depth") + 
@@ -117,32 +206,86 @@ ggplot(sample_sum_df, aes(x = sum)) +
   theme(axis.title.y = element_blank()) 
 ```
 
-```{r Filtering ASV with less than 5 reads}
-total_abundance <- taxa_sums(ps2)
-keepTaxa <- total_abundance >= 5
-ps3 <- prune_taxa(keepTaxa, ps2)
-ps3
-```
-
-```{r Rarefaction curves}
-devtools::install_github("gauravsk/ranacapa")
-
-plot <- ranacapa::ggrare(ps3, step = 100, label = NULL, color = "ID_MUESTRA", se = TRUE)
-#(plot <- plot + facet_wrap(~TRAT2))
-#ggsave("rarefactionps3.png")
+```{r Most abundant 5 phyla}
+phylum.sum = tapply(phyloseq::taxa_sums(ps1), tax_table(ps1)[, "Phylum"], sum, na.rm=TRUE)
+top5phyla = names(sort(phylum.sum, TRUE))[1:5]
+ps2 = phyloseq::prune_taxa((tax_table(ps1)[, "Phylum"] %in% top5phyla), ps1)
+ps2
 ```
 
 ```{r Global summary of the phyloseq object}
-microbiome::summarize_phyloseq(ps3) #Results total number of reads and average number of reads by sample
+microbiome::summarize_phyloseq(ps2) #Results total number of reads and average number of reads by sample
 
-global_df <- psmelt(ps3)
+global_df <- psmelt(ps2)
 head(global_df)
 #write.csv(global_df, "global_df.csv")
 ```
 
+```{r Hellinger transformation}
+# It is designed to transform count data or relative abundance data in a way that reduces the influence of large values and makes the data more suitable for techniques like Principal Component Analysis (PCA) or cluster analysis. The transformation helps in emphasizing the relative differences between samples.
+# It consist in 1) convert count data to proportions and 2) apply a square root transformation of 
+# It preserves EUCLIDEAN DISTANCES --> perfect for Beta-diversity and other analysis
+
+#Create a new phyloseq object:
+ps_hel <- ps2
+# Extract the OTU table
+otu_table_ps <- otu_table(ps_hel)
+taxa_rows <- taxa_are_rows(ps_hel)
+
+# Perform Hellinger transformation
+hellinger_otu_table <- vegan::decostand(as(otu_table_ps, "matrix"), method = "hellinger")
+# Replace the OTU table in the phyloseq object
+otu_table(ps_hel) <- otu_table(hellinger_otu_table, taxa_are_rows = taxa_rows)
+```
+
+```{r Beta diversity}
+# Based on distances --> we work with the Hellinger transformed data
+GP.ord <- ordinate(ps_hel, "NMDS", "bray")
+p1 = plot_ordination(ps_hel, GP.ord, type="taxa", color="Phylum", title="taxa")
+print(p1)
+
+p1 + facet_wrap(~Phylum, 3)
+
+p2 = plot_ordination(ps_hel, GP.ord, type="TRAT2", color="TRAT2", shape="DEPTH") 
+p2 + geom_polygon(aes(fill=TRAT2)) + geom_point(size=5) + ggtitle("samples")
+
+
+### Loop through different method parameter options to the plot_ordination function and store the plot results in a list. This code chunk performs each ordination method, creates the corresponding graphic based on the first two axes of each ordination result, and then stores each ggplot2 plot object in a different named element of the list named plist:
+dist = "bray"
+ord_meths = c("CCA", "RDA", "NMDS", "MDS", "PCoA")
+plist = llply(as.list(ord_meths), function(i, physeq, dist){
+        ordi = ordinate(physeq, method=i, distance=dist)
+        plot_ordination(physeq, ordi, "samples", color="TRAT2")
+}, ps_hel, dist)
+
+names(plist) <- ord_meths
+
+### The following chunk will extract the data from each of those individual plots, and put it back together in one big data.frame suitable for including all plots in one graphic:
+pdataframe = plyr::ldply(plist, function(x){
+    df = x$data[, 1:2]
+    colnames(df) = c("Axis_1", "Axis_2")
+    return(cbind(df, x$data))
+})
+names(pdataframe)[1] = "method"
+
+p = ggplot(pdataframe, aes(Axis_1, Axis_2, color=TRAT2, shape=DEPTH, fill=TRAT2, alpha=.3))
+p = p + geom_point(size=4) + geom_polygon()
+p = p + facet_wrap(~method, scales="free")
+p = p + scale_fill_manual(values=cols)
+p = p + scale_colour_manual(values=cols)
+p
+#ggsave("ord_methods.png")
+```
+
+
+
+
+
+
+
 ```{r Abundances}
 ##Total number of reads per ASV
-total_abundance <- taxa_sums(ps3)
+total_abundance <- taxa_sums(ps1)
 print(total_abundance)
 
 abundance_df <- data.frame(
@@ -169,84 +312,6 @@ colSums(sample_relabun_ASV_table[,8:ncol(sample_relabun_ASV_table)])
 head(sample_relabun_ASV_table)
 ```
 
-```{r Hellinger transformation}
-# It is designed to transform count data or relative abundance data in a way that reduces the influence of large values and makes the data more suitable for techniques like Principal Component Analysis (PCA) or cluster analysis. The transformation helps in emphasizing the relative differences between samples.
-# It consist in 1) convert count data to proportions and 2) apply a square root transformation of 
-# It preserves EUCLIDEAN DISTANCES --> perfect for Beta-diversity and other analysis
-
-#Create a new phyloseq object:
-ps3_hel <- ps3
-ps3_hel
-# Extract the OTU table
-otu_table_ps3 <- otu_table(ps3_hel)
-View(otu_table_ps3)
-# Perform Hellinger transformation
-hellinger_otu_table <- vegan::decostand(as(otu_table_ps3, "matrix"), method = "hellinger")
-# Replace the OTU table in the phyloseq object
-otu_table(ps3_hel) <- otu_table(hellinger_otu_table, taxa_are_rows = taxa_are_rows(otu_table))
-```
-
-```{r Alpha Diversity}
-# Specify the desired order of levels for TRAT2
-TRAT2_order <- c("UB", "LS", "HS1", "HS2")  
-# Reorder the levels of TRAT2
-sample_data(ps3)$TRAT2 <- factor(sample_data(ps3)$TRAT2, levels = TRAT2_order)
-
-plot_richness(ps3, color = "TRAT2", x = "TRAT2", 
-              measures = c("Observed", "Shannon")) + 
-  geom_boxplot(aes(fill = TRAT2), alpha=.7) + 
-  scale_color_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) + 
-  scale_fill_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) +
-theme(
-    panel.grid = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.line = element_line(),
-    strip.background = element_blank(),  # Remove strip background
-    axis.text.x = element_text(angle = 0.1, hjust = 1),  # Rotate x-axis labels
-    panel.background = element_blank(),  # Remove panel background color
-    plot.background = element_blank(),   # Remove plot background color
-    legend.position = "none"             # Remove legend
-  )                   
-#ggsave("alpha_div.png")
-
-alpha <- microbiome::alpha(ps3_hel, index = "all")
-# Observed = Richness: total number of OTU observed in a sample (it does not consider abundance or eveness)
-# Chao1: non-parametric estimator of the minimum species richness. The number of species in a community, accounting for the number of rare species that are likely to be missed
-# Shannon: It measures the diversity of a community by considering both species richness and evenness.Higher values indicate greater diversity, with more even distribution of species abundances.
-```
-
-```{r Models - Alpha diversity}
-ps3_hel_melt <- psmelt(ps3_hel)
-alpha <- rownames_to_column(alpha, var = "Sample")
-meta_data <- rownames_to_column(meta_data, var = "Sample")
-
-alpha_df <- meta_data %>%
-  left_join(alpha, by = "Sample")
-
-##############################################################
-#### FIRST!! We define the Contrast table we want to work with
-options(contrasts=c(factor="contr.sum", ordered="contr.poly"))
-##############################################################
-# Fit a linear mixed-effects model to test for significant differences in richness by treatment
-model_R <- lmer(observed ~ TRAT2*DEPTH + (1 | SITE), data = alpha_df)
-# Check the summary of the model
-summary(model_R)
-# Perform an ANOVA to test for significant differences
-anova(model_R)
-
-par(mfrow=c(1,3))
-qqnorm(resid(model_R)); qqline(resid(model_R))
-hist(resid(model_R))
-plot(fitted(model_R), resid(model_R)); abline(h=0)
-par(mfrow=c(1,1))
-
-install.packages("car")
-car::Anova(model_R, test.statistic="F", type=3)
-AICc(model_R)
-
-multcomp::cld(emmeans(model_R, ~TRAT2*DEPTH, type="response"), Letters=letters) #Tuckey's post-hoc test
-```
-
 ```{r}
 # Fit a linear mixed-effects model to test for significant differences in richness by treatment
 model_S <- lmer(diversity_shannon ~ TRAT2 + (1 | Site), data = ps3_hel_melt)
@@ -257,10 +322,6 @@ anova_results <- anova(model_R)
 
 # RandomForest (to see which variable is best to perform the models)
 # dredge form MumIn ?¿ (comparisions between a lot of models)
-```
-
-```{r Beta diversity}
-# Based on distances --> we work with the Hellinger transformed data
 ```
 
 ```{r}
@@ -539,11 +600,11 @@ p1 + facet_wrap(~Phylum, 3)
 
 ```
 
-```{r Community composition visualizations}
+```{r Rarefaction curves}
+devtools::install_github("gauravsk/ranacapa")
 
-```
-
-```{r Linear Mixed Models}
-
+plot <- ranacapa::ggrare(ps1, step = 100, label = NULL, color = "ID", se = TRUE)
+#(plot <- plot + facet_wrap(~TRAT2))
+#ggsave("rarefactionps3.png")
 ```
 

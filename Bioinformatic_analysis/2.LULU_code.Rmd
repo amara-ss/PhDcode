@@ -17,7 +17,7 @@ output:
 #install.packages("pacman")
 pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom")
 
-install_github("tobiasgf/lulu")
+#install_github("tobiasgf/lulu")
 library(lulu)
 ```
 
@@ -108,7 +108,7 @@ taxa2 <- taxa2[,-1]
 common_asv <- intersect(row.names(curated_asv_table), row.names(taxa2))
 common_asv
 curated_asv_table <- as.matrix(curated_asv_table[common_asv, ])
-taxa <- as.matrix(taxa2[common_asv, ])
+curated_taxa <- as.matrix(taxa2[common_asv, ])
 ```
 
 The *LULU function also produces a log file* (named something like lulu.log_20171113_162157) which will be placed in the working directory.
@@ -186,16 +186,33 @@ Singletons: 2076, 44.8% of seqs, 71.4% of clusters
     ### cluster_results.txt: C=centroids (reference sequence to create the cluster), H= hits; other sequences assigned to the cluster, S= singletones.
     ### centroids.fasta: This FASTA file contains the centroid sequences, which are the representative sequences for each cluster. These centroids are chosen based on the similarity threshold (97% in this case).
 
-clustered_asv.fasta <- readDNAStringSet("Raw_data_firefungi_soil/centroids.fasta")
-clustered_asv.fasta
+clustered_asv <- readDNAStringSet("Raw_data_firefungi_soil/centroids_0.fasta")
+clustered_asv
+#Extraction of the selected ASVs
+clustered_asv_ids <- names(clustered_asv)
+clustered_asv_ids
 
+# Keep only ASVs that survived postclustering
+clustered_asv_table <- curated_asv_table[rownames(curated_asv_table) %in% clustered_asv_ids, ]
+```
+
+```{r Assing taxonomy}
+#For the next step, we need that our taxonomy table matches the curated asv table. To that end, we need to cut out the taxonomy table to only the asv present in the curated table: 
+
+clustered_tax_table <- taxa2[rownames(taxa2) %in% clustered_asv_ids, ]
+
+dim(clustered_asv_table)
+dim(clustered_tax_table)
+```
+
+```{r}
 # What we need now is a table with each ASV and its abundance per sample, similar to the curated_asv_table:
 # 1) First we will need to identify which ASVs have been clustered in the postclustering
 # 2) Then, we will need to sum up their abundances
 
-curated_asv_table <- as.data.frame(curated_asv_table)
-curated_asv_table <- rownames_to_column(curated_asv_table, var = "centroid_asv")
-cluster_results <- read.table("Raw_data_firefungi_soil/cluster_results.txt")
+#curated_asv_table <- as.data.frame(curated_asv_table)
+#curated_asv_table <- rownames_to_column(curated_asv_table, var = "centroid_asv")
+#cluster_results <- read.table("Raw_data_firefungi_soil/cluster_results.txt")
 ## V2 = the cluster ID. All the ASVs that have been assigned together they will have the same cluster number
 ```
 

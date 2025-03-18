@@ -11,3 +11,69 @@ output:
     chunk_output_type: inline
 ---
 
+**FungalTraits**
+
+```{r}
+#install.packages("devtools")
+#devtools::install_github("ropenscilabs/datastorr")
+#devtools::install_github("traitecoevo/fungaltraits")
+library(fungaltraits)
+```
+
+```{r}
+fungal_traits <- fungal_traits() #As we can see, the Genus column is clean. However in our dataset every genus name contains a "g__" as a prefix. In order to match both datasets we need to get rid of that prefix:
+
+clustered_taxa <- as.data.frame(clustered_taxa)
+clustered_taxa$Genus <- gsub("^g__", "", clustered_taxa$Genus)
+genus_names <- clustered_taxa[, "Genus"]
+```
+
+```{r Genus level assignation}
+# Filtrar el dataframe de fungal_traits para que solo incluya los géneros presentes en asv_postclustering
+FT_genus <- fungal_traits %>%
+  filter(Genus %in% clustered_taxa$Genus)
+
+# Ver las primeras filas del resultado
+head(FT_genus)
+```
+
+**FunGUILD**
+
+```{r}
+devtools::install_github("brendanf/FUNGuildR", force =TRUE)
+```
+
+```{r}
+clustered_taxa <- as.data.frame(clustered_taxa)
+
+clean_taxonomy <- as.data.frame(clustered_taxa) %>%
+  mutate(Kingdom = gsub("^k__", "", Kingdom),
+         Phylum = gsub("^p__", "", Phylum),
+         Class = gsub("^c__", "", Class),
+         Order = gsub("^o__", "", Order),
+         Family = gsub("^f__", "", Family),
+         Genus = gsub("^g__", "", Genus),
+         Species = gsub("^s__", "", Species),
+         Taxonomy = paste(Kingdom, Phylum, Class, Order, Family, Genus, Species, sep = ";"))
+
+
+FG <- FUNGuildR::funguild_assign(clean_taxonomy)
+```
+
+```{r}
+guild_counts <- FG %>%
+  dplyr::count(guild, name = "Count") 
+
+top_guilds <- guild_counts %>%
+  top_n(15, Count)
+
+ggplot(top_guilds, aes(x = reorder(guild, -Count), y = Count, fill = guild)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(x = "Fungal Guild", y = "Number of Taxa", title = "Top 15 Most Frequent Fungal Guilds") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate labels for readability
+  theme(legend.position = "none") +
+  scale_fill_viridis_d()
+#ggsave("funguild.png")
+```
+
