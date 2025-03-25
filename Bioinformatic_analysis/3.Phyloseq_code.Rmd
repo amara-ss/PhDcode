@@ -83,15 +83,15 @@ ps0
 # Chao1: non-parametric estimator of the minimum species richness. The number of species in a community, accounting for the number of rare species that are likely to be missed
 # Shannon: It measures the diversity of a community by considering both species richness and evenness. Higher values indicate greater diversity, with more even distribution of species abundances.
 
-alpha <- microbiome::alpha(ps, index = c("Observed", "Shannon", "Chao1"))
+alpha_fungi <- microbiome::alpha(ps1, index = c("Observed", "Shannon", "Chao1"))
 
-alpha <- alpha %>% 
+alpha_fungi <- alpha_fungi %>% 
   tibble::rownames_to_column(var = "SampleID")
 
 metadata_df <- meta_data %>% 
   tibble::rownames_to_column(var = "SampleID")
 
-alpha <- left_join(alpha, metadata_df, by = "SampleID")
+alpha_fungi <- left_join(alpha_fungi, metadata_df, by = "SampleID")
 ```
 
 ```{r Alpha Diversity Models}
@@ -130,15 +130,15 @@ multcomp::cld(emmeans(mixed.var, ~TRAT2, type="response"), Letters= letters) #Tu
 
 -No significant differences found across *DEPTHS*
 -No significant differences in *Shannon diversity* across treatments
--Significant differences foun in *observed and Chao1 richness*: UB > LS > HS1 > HS2
+-Significant differences found in *Observed and Chao1 richness*: UB > LS > HS1 > HS2
 
 ```{r Alpha Diversity Plot}
 # Specify the desired order of levels for TRAT2
 TRAT2_order <- c("UB", "LS", "HS1", "HS2")  
 # Reorder the levels of TRAT2
-sample_data(ps)$TRAT2 <- factor(sample_data(ps)$TRAT2, levels = TRAT2_order)
+sample_data(ps1)$TRAT2 <- factor(sample_data(ps1)$TRAT2, levels = TRAT2_order)
 
-plot_richness(ps, color = "TRAT2", x = "TRAT2", 
+plot_richness(ps1, color = "TRAT2", x = "TRAT2", 
               measures = c("Observed", "Shannon", "Chao1")) + 
   geom_boxplot(aes(fill = TRAT2), alpha=.7) + 
   scale_color_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) + 
@@ -153,8 +153,10 @@ plot_richness(ps, color = "TRAT2", x = "TRAT2",
     plot.background = element_blank(),   # Remove plot background color
     legend.position = "none"             # Remove legend
   )
-#ggsave("alpha_div.png")
+#ggsave("alpha_div_k_fungi.png")
 ```
+
+*We've run Alpha Diversity with all ASV (ps) and with only Kingdom Fungi (ps1)*
 
 ```{r Quality analysis}
 # Define prevalence of each taxa (in how many samples did each taxa appear at least once)
@@ -171,7 +173,7 @@ prevdf <- data.frame(Prevalence = prevdf$Prevalence,
                      as.data.frame(tax_table(ps)))
 
 #With the following table we can see how well represented is each "Phylum" (or Kingdom, etc...)
-dfprev <- plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
+dfprev <- plyr::ddply(prevdf, "Kingdom", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
 ```
 
 ```{r Filtering: unlikely taxa}
@@ -223,11 +225,11 @@ plot_bar(ps2, "Phylum", fill = "Phylum", facet_grid = ~TRAT2)
 ```{r Ascomycota/Basidiomycota}
 # Filter to include only specified phyla
 filterPhylaAB <- c("p__Ascomycota", "p__Basidiomycota")
-ps4 = phyloseq::subset_taxa(ps2, Phylum %in% filterPhylaAB)
+ps4 = phyloseq::subset_taxa(ps1, Phylum %in% filterPhylaAB)
 # Normalize the data before filtering
-p <- transform_sample_counts(ps2, function(x) { x / sum(x) } * 100)
+#p <- transform_sample_counts(ps2, function(x) { x / sum(x) } * 100)
 # Filter the normalized data
-ps4 <- phyloseq::subset_taxa(p, Phylum %in% filterPhylaAB)
+#ps4 <- phyloseq::subset_taxa(p, Phylum %in% filterPhylaAB)
 # Melt the filtered and normalized data
 ps4melted <- psmelt(ps4)
 
@@ -240,17 +242,17 @@ summary_data <- ps4melted %>%
     sd_abundance = sd(Abundance),
     se_abundance = sd(Abundance) / sqrt(n()))  # Calculate standard error
 
-ps4melted <- ps4melted %>%
-  left_join(summary_data, by = c("Phylum", "DEPTH", "TRAT2"))
+#ps4melted <- ps4melted %>%
+#  left_join(summary_data, by = c("Phylum", "DEPTH", "TRAT2"))
 
 # Set factors for DEPTH and TRAT2
-ps4melted$DEPTH <- factor(ps4melted$DEPTH, levels = c("topsoil", "subsoil"))
-ps4melted$TRAT2 <- factor(ps4melted$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
+summary_data$DEPTH <- factor(summary_data$DEPTH, levels = c("topsoil", "subsoil"))
+summary_data$TRAT2 <- factor(summary_data$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
 
 cols_2 <- c("#fed976","#fd8d3c")
 
 # Create the plot
-ggplot(ps4melted, aes(x = Phylum, y = mean_abundance)) +
+ggplot(summary_data, aes(x = Phylum, y = mean_abundance)) +
   geom_bar(aes(color = Phylum, fill = Phylum), stat = "identity", position = "dodge") + 
   geom_errorbar(aes(ymin = mean_abundance - se_abundance, ymax = mean_abundance + se_abundance), width = 0.2, position = position_dodge(0.9)) +
   scale_color_manual(values = cols_2) +  # Use a Brewer palette
@@ -262,12 +264,10 @@ ggplot(ps4melted, aes(x = Phylum, y = mean_abundance)) +
     axis.line = element_line(color = "black"),
     axis.text.x = element_blank(),
     axis.ticks = element_line(color = "black"),
-    strip.background = element_blank(),  # Remove strip background
-    legend.position = "none"
-  )
-#ggsave("AscoBasidio.png")
-
-
+    strip.background = element_blank())  # Remove strip background
+    #legend.position = "none"
+ 
+ggsave("AscoBasidio2.png")
 ```
 
 ```{r Ascomycota/Basidiomycota Models}
@@ -369,7 +369,7 @@ ggplot(nmds_data, aes(x = Axis_1, y = Axis_2, color = TRAT2, fill = TRAT2)) +
 #################
 OTU.ord <- ordinate(ps2, "NMDS", "bray")
 
-ps2_meta_data <- data.frame(sample_data(ps2))  # Get the metadata from the ps object
+ps2_meta_data <- data.frame(sample_data(ps_hel))  # Get the metadata from the ps object
 
 plot_vars <- c("Slope_per","Organic_layer_mean_depth_cm", "Charred_organic_layer_mean_cm", "Green_per", "Brown_per", "Consumed_per", "Grass_per", "Old_litter_per", "New_litter_per", "Mineral_per", "Ash_per", "Stone_per")
 
@@ -395,7 +395,7 @@ plot_ordination(ps2, OTU.ord, color = "TRAT2") +
 #ggsave("nmds2.png")
 
 #####TOPSOIL
-ps2_topsoil <- subset_samples(ps2, DEPTH == "topsoil")
+ps2_topsoil <- subset_samples(ps_hel, DEPTH == "topsoil")
 
 # Perform ordination for topsoil samples
 OTU.ord_topsoil <- ordinate(ps2_topsoil, method = "NMDS", distance = "bray")
@@ -424,7 +424,7 @@ plot_ordination(ps2, OTU.ord_topsoil, color = "TRAT2") +
 #ggsave("nmdsTOP_env.png")
 
 #####SUBSOIL
-ps2_subsoil <- subset_samples(ps2, DEPTH == "subsoil")
+ps2_subsoil <- subset_samples(ps_hel, DEPTH == "subsoil")
 
 # Perform ordination for subsoil samples
 OTU.ord_subsoil <- ordinate(ps2_subsoil, method = "NMDS", distance = "bray")
@@ -454,7 +454,7 @@ plot_ordination(ps2, OTU.ord_subsoil, color = "TRAT2") +
 ```
 
 ```{r PERMANOVA}
-permanova <- vegan::adonis2(phyloseq::distance(ps2, method="bray") ~ TRAT2*DEPTH,
+permanova <- vegan::adonis2(phyloseq::distance(ps_hel, method="bray") ~ TRAT2*DEPTH,
              permutations = 999, data = ps2_meta_data)
 permanova
 
@@ -485,7 +485,7 @@ permanova_sub
 # (1) the community data matrix --> with sites in rows and species in columns
 # (2) the vector that describes the classification of sites into groups --> a vector containing the classification of the sites into groups
 
-df <-  as.data.frame((otu_table(ps2)))
+df <-  as.data.frame((otu_table(ps2))) #community data (abundance matrix)
 head(df)
 
 # Transpose the table
@@ -514,7 +514,7 @@ summary(indval, indvalcomp=TRUE)
 summary(indval, indvalcomp=TRUE, alpha=1) 
 
 # Extract significant species and their indicator values
-significant_species <- indval$
+significant_species <- indval
 indicator_values <- significant_species$sign
 
 # Create a dataframe with species, groups, and indicator values
