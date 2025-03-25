@@ -83,7 +83,7 @@ ps0
 # Chao1: non-parametric estimator of the minimum species richness. The number of species in a community, accounting for the number of rare species that are likely to be missed
 # Shannon: It measures the diversity of a community by considering both species richness and evenness. Higher values indicate greater diversity, with more even distribution of species abundances.
 
-alpha_fungi <- microbiome::alpha(ps1, index = c("Observed", "Shannon", "Chao1"))
+alpha_fungi <- microbiome::alpha(ps, index = c("Observed", "Shannon", "Chao1"))
 
 alpha_fungi <- alpha_fungi %>% 
   tibble::rownames_to_column(var = "SampleID")
@@ -95,15 +95,15 @@ alpha_fungi <- left_join(alpha_fungi, metadata_df, by = "SampleID")
 ```
 
 ```{r Alpha Diversity Models}
-alpha$TRAT2 <- ordered(alpha$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
-alpha$DEPTH <- ordered(alpha$DEPTH, levels=c("topsoil", "subsoil"))
+alpha_fungi$TRAT2 <- ordered(alpha_fungi$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+alpha_fungi$DEPTH <- ordered(alpha_fungi$DEPTH, levels=c("topsoil", "subsoil"))
 
 ### Visually assessment of data
-var <- alpha$diversity_shannon
+var <- alpha_fungi$observed
 
 hist(var) 
 
-alpha %>%
+alpha_fungi %>%
   ggplot(aes(x=TRAT2, y=var, fill=DEPTH)) +
   geom_boxplot(outlier.color = "red",
     outlier.shape = 8) +
@@ -128,9 +128,13 @@ car::Anova(mixed.var, test.statistic="F", type=3)
 multcomp::cld(emmeans(mixed.var, ~TRAT2, type="response"), Letters= letters) #Tuckey's post-hoc test
 ```
 
+*We've run Alpha Diversity with all ASV (ps) and with only Kingdom Fungi (ps1)*
+
 -No significant differences found across *DEPTHS*
 -No significant differences in *Shannon diversity* across treatments
--Significant differences found in *Observed and Chao1 richness*: UB > LS > HS1 > HS2
+-Significant differences found in *Observed and Chao1 richness*: 
+  --> ps Observed and Chao1 richness (no sig. differences across DEPTHs; across treatmentsUB, UB > LS > HS1 > HS2)
+  --> ps1 (k__Fungi): Observed and Chao1 richness (no sig. differences across DEPTHs; across treatmentsUB, LS > HS1, HS2)
 
 ```{r Alpha Diversity Plot}
 # Specify the desired order of levels for TRAT2
@@ -155,8 +159,6 @@ plot_richness(ps1, color = "TRAT2", x = "TRAT2",
   )
 #ggsave("alpha_div_k_fungi.png")
 ```
-
-*We've run Alpha Diversity with all ASV (ps) and with only Kingdom Fungi (ps1)*
 
 ```{r Quality analysis}
 # Define prevalence of each taxa (in how many samples did each taxa appear at least once)
@@ -266,8 +268,7 @@ ggplot(summary_data, aes(x = Phylum, y = mean_abundance)) +
     axis.ticks = element_line(color = "black"),
     strip.background = element_blank())  # Remove strip background
     #legend.position = "none"
- 
-ggsave("AscoBasidio2.png")
+#ggsave("AscoBasidio2.png")
 ```
 
 ```{r Ascomycota/Basidiomycota Models}
@@ -299,13 +300,13 @@ head(global_df)
 
 ```{r Beta diversity}
 # Based on distances --> we work with the Hellinger transformed data
-GP.ord <- ordinate(ps2, "NMDS", "bray")
-p1 = plot_ordination(ps2, GP.ord, type="taxa", color="Phylum", title="taxa")
+GP.ord <- ordinate(ps_hel, "NMDS", "bray")
+p1 = plot_ordination(ps_hel, GP.ord, type="taxa", color="Phylum", title="taxa")
 print(p1)
 
 p1 + facet_wrap(~Phylum, 3)
 
-p2 = plot_ordination(ps2, GP.ord, type="TRAT2", color="TRAT2", shape="DEPTH") 
+p2 = plot_ordination(ps_hel, GP.ord, type="TRAT2", color="TRAT2", shape="DEPTH") 
 p2 + geom_polygon(aes(fill=TRAT2)) + geom_point(size=5) + ggtitle("samples")
 
 ### Loop through different method parameter options to the plot_ordination function and store the plot results in a list. This code chunk performs each ordination method, creates the corresponding graphic based on the first two axes of each ordination result, and then stores each ggplot2 plot object in a different named element of the list named plist:
@@ -314,7 +315,7 @@ ord_meths = c("CCA", "RDA", "NMDS", "MDS", "PCoA")
 plist = llply(as.list(ord_meths), function(i, physeq, dist){
         ordi = ordinate(physeq, method=i, distance=dist)
         plot_ordination(physeq, ordi, "samples", color="TRAT2")
-}, ps2, dist)
+}, ps_hel, dist)
 
 names(plist) <- ord_meths
 
@@ -332,7 +333,7 @@ p = p + facet_wrap(~method, scales="free")
 p = p + scale_fill_manual(values=cols)
 p = p + scale_colour_manual(values=cols)
 p
-#ggsave("ordination_methods.png", plot = p, width = 12, height = 10, dpi = 300, bg = "white")
+#ggsave("ordination_methods_hel.png", plot = p, width = 12, height = 10, dpi = 300, bg = "white")
 ```
 
 *NMDS (Non-Metric Multidimensional Scaling)*
@@ -364,10 +365,10 @@ ggplot(nmds_data, aes(x = Axis_1, y = Axis_2, color = TRAT2, fill = TRAT2)) +
   theme_minimal() +
   facet_wrap(~DEPTH)+
   labs(x = "NMDS Axis 1", y = "NMDS Axis 2")
-#ggsave("nmds.png")
+#ggsave("nmds_hel.png")
 
 #################
-OTU.ord <- ordinate(ps2, "NMDS", "bray")
+OTU.ord <- ordinate(ps_hel, "NMDS", "bray")
 
 ps2_meta_data <- data.frame(sample_data(ps_hel))  # Get the metadata from the ps object
 
@@ -378,24 +379,26 @@ env_df <- ps2_meta_data %>%
 
 envfit_results  <- vegan::envfit(OTU.ord, env_df, permutations = 999, na.rm = TRUE)
 
+env_coord_sig0 <- scores(envfit_results, "vectors")[envfit_results$vectors$pvals < 0.05, ] #Only the significant variables
+
 # Plot the ordination and add the environmental vectors
-plot_ordination(ps2, OTU.ord, color = "TRAT2") +
+plot_ordination(ps_hel, OTU.ord, color = "TRAT2") +
   geom_point(size = 4) +  # Adjust point size
   geom_polygon(alpha = 0.2) +
   scale_fill_manual(values = cols) + 
   scale_colour_manual(values = cols) +
-  geom_segment(data = as.data.frame(envfit_results$vectors$arrows), 
+  geom_segment(data = as.data.frame(env_coord_sig0), 
                aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
                arrow = arrow(type = "open", length = unit(0.2, "inches")), 
                size = 1, color = "blue") +
-  geom_text(data = as.data.frame(envfit_results$vectors$arrows), 
-            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_results$vectors$arrows)),
+  geom_text(data = as.data.frame(env_coord_sig0), 
+            aes(x = NMDS1, y = NMDS2, label = rownames(env_coord_sig0)),
             size = 3, color = "blue") +
   theme_minimal()
-#ggsave("nmds2.png")
+#ggsave("nmds_hel.png")
 
 #####TOPSOIL
-ps2_topsoil <- subset_samples(ps_hel, DEPTH == "topsoil")
+ps2_topsoil <- subset_samples(ps2, DEPTH == "topsoil")
 
 # Perform ordination for topsoil samples
 OTU.ord_topsoil <- ordinate(ps2_topsoil, method = "NMDS", distance = "bray")
@@ -406,25 +409,27 @@ env_df_TOP <- ps2_meta_data %>%
 
 envfit_TOP  <- vegan::envfit(OTU.ord_topsoil, env_df_TOP, permutations = 999, na.rm = TRUE)
 
+envfit_TOP_sig <- scores(envfit_TOP, "vectors")[envfit_TOP$vectors$pvals < 0.05, ] #Only the significant variables
+
 # Plot the ordination and add the environmental vectors
 plot_ordination(ps2, OTU.ord_topsoil, color = "TRAT2") +
   geom_point(size = 4) +  # Adjust point size
   geom_polygon(alpha = 0.2) +
   scale_fill_manual(values = cols) + 
   scale_colour_manual(values = cols) +
-  geom_segment(data = as.data.frame(envfit_TOP$vectors$arrows), 
+  geom_segment(data = as.data.frame(envfit_TOP_sig), 
                aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
                arrow = arrow(type = "open", length = unit(0.2, "inches")), 
                size = 1, color = "blue") +
-  geom_text(data = as.data.frame(envfit_TOP$vectors$arrows), 
-            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_TOP$vectors$arrows)),
+  geom_text(data = as.data.frame(envfit_TOP_sig), 
+            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_TOP_sig)),
             size = 3, color = "blue") +
   scale_x_reverse()+
   theme_minimal()
 #ggsave("nmdsTOP_env.png")
 
 #####SUBSOIL
-ps2_subsoil <- subset_samples(ps_hel, DEPTH == "subsoil")
+ps2_subsoil <- subset_samples(ps2, DEPTH == "subsoil")
 
 # Perform ordination for subsoil samples
 OTU.ord_subsoil <- ordinate(ps2_subsoil, method = "NMDS", distance = "bray")
@@ -435,18 +440,20 @@ env_df_SUB <- ps2_meta_data %>%
 
 envfit_SUB  <- vegan::envfit(OTU.ord_subsoil, env_df_SUB, permutations = 999, na.rm = TRUE)
 
+envfit_SUB_sig <- scores(envfit_SUB, "vectors")[envfit_SUB$vectors$pvals < 0.05, ] #Only the significant variables
+
 # Plot the ordination and add the environmental vectors
 plot_ordination(ps2, OTU.ord_subsoil, color = "TRAT2") +
   geom_point(size = 4) +  # Adjust point size
   geom_polygon(alpha = 0.2) +
   scale_fill_manual(values = cols) + 
   scale_colour_manual(values = cols) +
-  geom_segment(data = as.data.frame(envfit_SUB$vectors$arrows), 
+  geom_segment(data = as.data.frame(envfit_SUB_sig), 
                aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
                arrow = arrow(type = "open", length = unit(0.2, "inches")), 
                size = 1, color = "blue") +
-  geom_text(data = as.data.frame(envfit_SUB$vectors$arrows), 
-            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_SUB$vectors$arrows)),
+  geom_text(data = as.data.frame(envfit_SUB_sig), 
+            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_SUB_sig)),
             size = 3, color = "blue") +
   scale_x_reverse()+
   theme_minimal()
@@ -473,6 +480,8 @@ permanova_sub
 #Model R2 = the proportion of total variation in the Bray-Curtis distances that is explained by TRAT2
 #Residual R2: This is the proportion of variation not explained by TRAT2
 ```
+
+*We've run all these analysis with the raw data and the Hellinger transformed data and results are practically the same*
 
 ```{r Indicator Species Analysis}
 ## Species are chosen as indicators if they:
@@ -502,8 +511,13 @@ indval <- indicspecies::multipatt(asv_transposed, groups4,
                     control = how(nperm=999)) # El argumento control = how(nperm=999) permite elegir el número de permutaciones aleatorias requeridas para la prueba de permutación (este número afecta la precisión del valor p). La función how() del paquete permute permite definir diseños permutacionales más complejos
 summary(indval) 
 
-indval$sign
-#The first columns of indicate (with ones and zeroes) which site groups were included in the combination preferred by the species. Then, the column indicates the index of the site group combination. The remaining two columns are the association statistic and the p-value of the permutational test.
+indval_results <- indval$sign
+#The first columns indicate (with ones and zeroes) which site groups were included in the combination preferred by the species. Then, the column indicates the index of the site group combination. The remaining two columns are the association statistic and the p-value of the permutational test.
+indval_df <- data.frame(ASV = rownames(indval_results), indval_results)
+df_tax <-  as.data.frame((tax_table(ps2)))
+df_tax <- df_tax %>% 
+  tibble::rownames_to_column(var = "ASV")
+indicator_with_taxonomy4 <- merge(indval_df, df_tax, by = "ASV")
 
 # Añadir indvalcomp = TRUE" a la función anterior nos brinda información adicional sobre por qué las especies pueden usarse como indicadores:
 summary(indval, indvalcomp=TRUE)
@@ -512,35 +526,6 @@ summary(indval, indvalcomp=TRUE)
 
 # Al añadir alfa = 1, decimos que queremos mostrar el grupo al que está asociada cada especie, independientemente de si la asociación es significativa o no. (por defecto viene establecido alpha 0,05, que se corresponde al valor de significancia que  tiene en cuenta el análisis de permutación)  
 summary(indval, indvalcomp=TRUE, alpha=1) 
-
-# Extract significant species and their indicator values
-significant_species <- indval
-indicator_values <- significant_species$sign
-
-# Create a dataframe with species, groups, and indicator values
-indicator_data <- data.frame(
-  Species = rownames(indicator_values),
-  Group = colnames(indicator_values),
-  IndicatorValue = as.vector(indicator_values)
-)
-
-
-
-# Transform the row names into a column
-asv_transposed <- rownames_to_column(asv_transposed, var = "Site")
-# Convert all columns to numeric except the first one
-asv_transposed <- (asv_transposed) %>%
-  mutate(across(-Site, as.numeric))
-head(asv_transposed)
-# Paste some columns from the meta_data dataframe:
-meta2 <- rownames_to_column(meta_data, var = "Site")
-meta2 <- meta2 %>% 
-  dplyr:: select(c(1:8))
-asv_transposed_complete <- left_join(asv_transposed, meta2, by = "Site")
-#write.csv(asv_transposed_complete, "asv_transposed_complete.csv")
-asv_transposed_complete <- read.csv("F:/FPI - INIA/ADN/Firefungi_2021/asv_transposed_complete.csv", sep=";")
-
-
 
 #######################################################################
 #Now we want to do 8 groups: UB_topsoil, UB_subsoil, LS_topsoil, LS_subsoil, HS1_topsoil, HS1_subsoil, HS2_topsoil, HS2_subsoil
@@ -551,7 +536,81 @@ groups8 <- as.factor(ps2_meta_data$TRAT2_DEPTH)
 indval8 <- indicspecies::multipatt(asv_transposed, groups8, 
                     control = how(nperm=999))
 summary(indval8)
+
+indval8_results <- indval8$sign
+#The first columns of indicate (with ones and zeroes) which site groups were included in the combination preferred by the species. Then, the column indicates the index of the site group combination. The remaining two columns are the association statistic and the p-value of the permutational test.
+indval8_df <- data.frame(ASV = rownames(indval8_results), indval8_results)
+
+indicator_with_taxonomy8 <- merge(indval8_df, df_tax, by = "ASV")
+
+############################## plot ####################################
+###BUBBLE
+# Convert wide format to long format
+plot_indval_data <- indicator_with_taxonomy4 %>%
+  pivot_longer(cols = c(s.UB, s.LS, s.HS1, s.HS2), 
+               names_to = "TRAT2", 
+               values_to = "Presence") %>%
+  
+  dplyr::filter(p.value < 0.05) #Only significant taxa
+
+plot_indval_data$TRAT2 <- ordered(plot_indval_data$TRAT2, levels = c("s.UB", "s.LS", "s.HS1", "s.HS2"))
+
+ggplot(plot_indval_data, aes(x = TRAT2, y = Order, size =stat, fill = stat)) +
+  geom_point(shape = 21, color = "black") +  # Bubble with black border
+  scale_size(range = c(2, 8)) +  # Adjust bubble size
+  scale_fill_viridis_c(option = "plasma") +  # Use a color gradient
+  labs(x = "Fire Severity (TRAT2)", y = "Taxon", size = "IndVal", fill = "IndVal") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+#ggsave("indicspecies_bubble.png")
+
+###HEATMAP
+ggplot(plot_indval_data, aes(x = TRAT2, y = Genus, fill = Presence)) +
+  geom_tile(color = "white") +  # Add white grid lines for clarity
+  scale_fill_gradient(low = "white", high = "blue") +  # Adjust color scale
+  theme_minimal() +
+  labs(fill = "Indicator Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+ggsave("indicspecies_heatmap.png")
+
 ```
+
+```{r}
+indicator_with_taxonomy4 <- indicator_with_taxonomy4 %>%
+  dplyr::mutate(TotalPresence = rowSums(across(c(s.UB, s.LS, s.HS1, s.HS2)))) %>%
+  dplyr::filter(TotalPresence==1) %>%
+  pivot_longer(cols = c(s.UB, s.LS, s.HS1, s.HS2), 
+               names_to = "TRAT2", 
+               values_to = "Presence") %>%
+  dplyr::filter(p.value < 0.05) #Only significant taxa
+
+indicator_with_taxonomy4$TRAT2 <- ordered(indicator_with_taxonomy4$TRAT2, levels = c("s.UB", "s.LS", "s.HS1", "s.HS2"))
+
+ggplot(indicator_with_taxonomy4, aes(x = TRAT2, y = Family, fill= Presence)) +
+  geom_tile(color = "white") +  # Add white grid lines for clarity
+  scale_fill_gradient(low = "white", high = "blue") +  # Adjust color scale
+  theme_minimal() +
+  labs(fill = "Indicator Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(indicator_with_taxonomy4, aes(x= TRAT2, y=Family, size =Presence, color = TRAT2)) +
+  geom_point()+
+  scale_size(range = c(.1, 8)) +
+  scale_color_manual(values = cols) +
+theme(
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    strip.placement = "outside",  # Place strip labels outside the plot
+    strip.background = element_blank(),
+    legend.position = "none" # Remove strip background
+  )
+
+```
+
 
 *PCoA (Principal Coordinate Analysis)*
 - A linear metric ordination technique.
