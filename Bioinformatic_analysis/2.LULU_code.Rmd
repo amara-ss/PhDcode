@@ -203,6 +203,14 @@ clustered_tax_table <- taxa2[rownames(taxa2) %in% clustered_asv_ids, ]
 
 dim(clustered_asv_table)
 dim(clustered_tax_table)
+
+# Total %of taxonomic assignation per rank
+# Total number of ASVs
+total_asvs <- nrow(clustered_tax_table)
+# Percentage of assigned ASVs at each taxonomic level
+percent_assigned <- colSums(!is.na(clustered_tax_table)) / total_asvs * 100
+# Round for readability
+round(percent_assigned, 1)
 ```
 
 ```{r}
