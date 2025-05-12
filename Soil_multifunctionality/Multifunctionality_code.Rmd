@@ -875,6 +875,14 @@ dataset %>%
 #ggsave("output/FigureS1.png", width = 5, height = 6.5, dpi = 300)
 ```
 
+"pH", "EC", "densidad_revisada_25", "C_N_ratio",
+              "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", 
+              "NH4_mgL_105","NO3_mgL_105", "Ergosterol_µg_g", 
+              "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
+              "Nitrogen_stock_Mg_ha", "SOM_per_corregido", "MBC_mg_kg_105",
+              "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
+              "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105"
+              
 *SUPPLEMENTARY INFORMATION*
 
 ```{r Multifunctionality: using the raw dataset}

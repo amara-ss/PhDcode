@@ -79,6 +79,27 @@ fnRs <- sort(list.files(path_firefungi, pattern="_R2_001.fastq.gz", full.names =
 # Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
 sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
 
+###################### To know the total number of raw sequences #######################################
+# Function to count reads in a gzipped fastq file
+count_reads <- function(fastq_file) {
+  n <- length(readLines(gzfile(fastq_file))) / 4
+  return(n)
+}
+
+# Count reads for all forward and reverse reads
+read_counts_F <- sapply(fnFs, count_reads)
+read_counts_R <- sapply(fnRs, count_reads)
+
+# Total reads per direction and in total
+total_reads_F <- sum(read_counts_F)
+total_reads_R <- sum(read_counts_R)
+
+# Print summary
+cat("Total forward reads:", total_reads_F, "\n")
+cat("Total reverse reads:", total_reads_R, "\n")
+cat("Total raw paired reads:", min(total_reads_F, total_reads_R), "\n") # conservative estimate
+########################################################################################################
+
 # Identify primers:
 FWD <- "CTTGGTCATTTAGAGGAAGTAA"  
 REV <- "GCTGCGTTCTTCATCGATGC"
@@ -196,6 +217,10 @@ out <- dada2::filterAndTrim(cutFs, filtFs, cutRs, filtRs, maxN = 0, maxEE = c(2,
 head(out)
 #write.table(out, "out.txt") 
 
+# Total reads after filtering
+total_filtered_reads <- sum(out[, "reads.out"])
+cat("Total reads after filtering:", total_filtered_reads, "\n")
+
 #Error rates for each possible nucleotide transition --> it creates an error model that will be used downstream in the hardcore of the DADA2 algorithm
 errF <- dada2::learnErrors(filtFs, multithread=FALSE)
 errR <- dada2::learnErrors(filtRs, multithread=FALSE)
@@ -223,37 +248,31 @@ seqtab.nochim <- dada2::removeBimeraDenovo(seqtab, method="consensus", multithre
 #write.csv(seqtab.nochim, file = "seqtab.nochim.csv", row.names = TRUE)
 dim(seqtab.nochim)
 sum(seqtab.nochim)/sum(seqtab)
+
+# Total reads after chimera removal
+total_reads_after <- sum(seqtab.nochim)
+cat("Total reads after chimera removal:", total_reads_after, "\n")
+#Number of ASV after chimera removal
+n_asvs <- ncol(seqtab.nochim)
+cat("total_ASVs", n_asvs, "\n")
 ```
 
 ```{r Tracking}
-# summary of samples in out by percentage
-out %>%
-  data.frame() %>%
-  dplyr::mutate(Samples = rownames(.),
-         percent_kept = 100*(reads.out/reads.in)) %>%
-  dplyr::select(Samples, everything()) %>%
-  summarise(min_remaining = paste0(round(min(percent_kept), 2), "%"),
-            median_remaining = paste0(round(median(percent_kept), 2), "%"),
-            mean_remaining = paste0(round(mean(percent_kept), 2), "%"),
-            max_remaining = paste0(round(max(percent_kept), 2), "%"))
-
-#Number of sequences with unidentifyed nucleotides: 
-#Filt_N <- dada2::filterAndTrim(fnFs.cutN, fnFs.filtN, fnRs.cutN, fnRs.filtN, maxN = 0, multithread = FALSE, verbose = FALSE)
-#write.table(Filtrado, "Filtrado_Ns.txt")
-
-#As a final check of our progress, we’ll look at the number of reads that made it through each step in the pipeline:
+# Function to get number of reads per sample from mergers
 getN <- function(x) sum(dada2::getUniques(x))
-track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
-# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
-colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
-rownames(track) <- sample.names
-head(track)
-#write.csv(track, "track.csv", row.names = TRUE)
 
-track <- as.data.frame(track)
-totals <- track %>%
-  dplyr::summarise(across(everything(), list(sum = sum, mean = mean, sd = sd)))
-totals
+# Build tracking table
+track <- data.frame(
+  input = out[, "reads.in"],
+  filtered = out[, "reads.out"],
+  denoisedF = sapply(dadaFs, getN),
+  denoisedR = sapply(dadaRs, getN),
+  merged = sapply(mergers, getN),
+  nonchim = rowSums(seqtab.nochim)
+)
+
+rownames(track) <- names(out)
+head(track)
 ```
 
 ```{r Assign taxonomy}
@@ -272,6 +291,14 @@ taxa <- dada2::assignTaxonomy(seqtab.nochim, "sh_general_release_dynamic_s_all_2
 taxa.print <- taxa # Removing sequence rownames for display only
 rownames(taxa.print) <- NULL
 head(taxa.print)
+
+#Percentage of ASVs assigned at each taxonomic level
+# Total number of ASVs
+total_asvs <- nrow(taxa)
+# Percentage of assigned ASVs at each taxonomic level
+percent_assigned <- colSums(!is.na(taxa)) / total_asvs * 100
+# Round for readability
+round(percent_assigned, 1)
 ```
 
 *Bootstrap* --> para asignación taxonómica, independientemente de los organismos con los que estemos tratando. Coge un "trocito" de secuencia (subsecuencia o K-mer) de un determinado número de pares de bases (8 pb en este caso) que se van a repetir muchas veces. Estas secuencias se van a comparar con la base de datos en cuestión (UNITE en este caso) y si más de un 80% de las subsecuencias se pegan a un mismo taxón, el algoritmo asignará la secuencia madre a este taxón.

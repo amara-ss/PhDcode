@@ -180,8 +180,8 @@ dfprev <- plyr::ddply(prevdf, "Kingdom", function(df1){cbind(mean(df1$Prevalence
 
 ```{r Filtering: unlikely taxa}
 #Based on the results above, we could decide to filter some Phylum out (the ones with less representation). We can also get rid of the Kingdoms not corresponding to fungi:
-plot_bar(ps, fill = "Kingdom") + 
-geom_bar(aes(color=Kingdom, fill=Kingdom), stat="identity", position="stack")
+#plot_bar(ps, fill = "Kingdom") + 
+#geom_bar(aes(color=Kingdom, fill=Kingdom), stat="identity", position="stack")
 
 ps1 = phyloseq::subset_taxa(ps, Kingdom=="k__Fungi")
 ps1
@@ -300,13 +300,13 @@ head(global_df)
 
 ```{r Beta diversity}
 # Based on distances --> we work with the Hellinger transformed data
-GP.ord <- ordinate(ps_hel, "NMDS", "bray")
-p1 = plot_ordination(ps_hel, GP.ord, type="taxa", color="Phylum", title="taxa")
+GP.ord <- ordinate(ps1, "NMDS", "bray")
+p1 = plot_ordination(ps1, GP.ord, type="taxa", color="Phylum", title="taxa")
 print(p1)
 
 p1 + facet_wrap(~Phylum, 3)
 
-p2 = plot_ordination(ps_hel, GP.ord, type="TRAT2", color="TRAT2", shape="DEPTH") 
+p2 = plot_ordination(ps1, GP.ord, type="TRAT2", color="TRAT2", shape="DEPTH") 
 p2 + geom_polygon(aes(fill=TRAT2)) + geom_point(size=5) + ggtitle("samples")
 
 ### Loop through different method parameter options to the plot_ordination function and store the plot results in a list. This code chunk performs each ordination method, creates the corresponding graphic based on the first two axes of each ordination result, and then stores each ggplot2 plot object in a different named element of the list named plist:
@@ -315,7 +315,7 @@ ord_meths = c("CCA", "RDA", "NMDS", "MDS", "PCoA")
 plist = llply(as.list(ord_meths), function(i, physeq, dist){
         ordi = ordinate(physeq, method=i, distance=dist)
         plot_ordination(physeq, ordi, "samples", color="TRAT2")
-}, ps_hel, dist)
+}, ps1, dist)
 
 names(plist) <- ord_meths
 
@@ -333,7 +333,7 @@ p = p + facet_wrap(~method, scales="free")
 p = p + scale_fill_manual(values=cols)
 p = p + scale_colour_manual(values=cols)
 p
-#ggsave("ordination_methods_hel.png", plot = p, width = 12, height = 10, dpi = 300, bg = "white")
+#ggsave("ordination_methods_ps1.png", plot = p, width = 12, height = 10, dpi = 300, bg = "white")
 ```
 
 *NMDS (Non-Metric Multidimensional Scaling)*
@@ -387,13 +387,13 @@ plot_ordination(ps_hel, OTU.ord, color = "TRAT2") +
   geom_polygon(alpha = 0.2) +
   scale_fill_manual(values = cols) + 
   scale_colour_manual(values = cols) +
-  geom_segment(data = as.data.frame(env_coord_sig0), 
-               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
-               arrow = arrow(type = "open", length = unit(0.2, "inches")), 
-               size = 1, color = "blue") +
-  geom_text(data = as.data.frame(env_coord_sig0), 
-            aes(x = NMDS1, y = NMDS2, label = rownames(env_coord_sig0)),
-            size = 3, color = "blue") +
+  #geom_segment(data = as.data.frame(env_coord_sig0), 
+  #             aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+  #             arrow = arrow(type = "open", length = unit(0.2, "inches")), 
+  #             size = 1, color = "blue") +
+  #geom_text(data = as.data.frame(env_coord_sig0), 
+  #          aes(x = NMDS1, y = NMDS2, label = rownames(env_coord_sig0)),
+  #          size = 3, color = "blue") +
   theme_minimal()
 #ggsave("nmds_hel.png")
 
@@ -417,16 +417,16 @@ plot_ordination(ps2, OTU.ord_topsoil, color = "TRAT2") +
   geom_polygon(alpha = 0.2) +
   scale_fill_manual(values = cols) + 
   scale_colour_manual(values = cols) +
-  geom_segment(data = as.data.frame(envfit_TOP_sig), 
-               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
-               arrow = arrow(type = "open", length = unit(0.2, "inches")), 
-               size = 1, color = "blue") +
-  geom_text(data = as.data.frame(envfit_TOP_sig), 
-            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_TOP_sig)),
-            size = 3, color = "blue") +
+  #geom_segment(data = as.data.frame(envfit_TOP_sig), 
+  #             aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+  #             arrow = arrow(type = "open", length = unit(0.2, "inches")), 
+  #             size = 1, color = "blue") +
+  #geom_text(data = as.data.frame(envfit_TOP_sig), 
+  #          aes(x = NMDS1, y = NMDS2, label = rownames(envfit_TOP_sig)),
+  #          size = 3, color = "blue") +
   scale_x_reverse()+
   theme_minimal()
-#ggsave("nmdsTOP_env.png")
+#ggsave("nmdsTOP.png")
 
 #####SUBSOIL
 ps2_subsoil <- subset_samples(ps2, DEPTH == "subsoil")
@@ -448,16 +448,16 @@ plot_ordination(ps2, OTU.ord_subsoil, color = "TRAT2") +
   geom_polygon(alpha = 0.2) +
   scale_fill_manual(values = cols) + 
   scale_colour_manual(values = cols) +
-  geom_segment(data = as.data.frame(envfit_SUB_sig), 
-               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
-               arrow = arrow(type = "open", length = unit(0.2, "inches")), 
-               size = 1, color = "blue") +
-  geom_text(data = as.data.frame(envfit_SUB_sig), 
-            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_SUB_sig)),
-            size = 3, color = "blue") +
+  #geom_segment(data = as.data.frame(envfit_SUB_sig), 
+  #             aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+  #             arrow = arrow(type = "open", length = unit(0.2, "inches")), 
+  #             size = 1, color = "blue") +
+  #geom_text(data = as.data.frame(envfit_SUB_sig), 
+  #          aes(x = NMDS1, y = NMDS2, label = rownames(envfit_SUB_sig)),
+  #          size = 3, color = "blue") +
   scale_x_reverse()+
   theme_minimal()
-#ggsave("nmdsSUB_env.png")
+#ggsave("nmdsSUB.png")
 ```
 
 ```{r PERMANOVA}
@@ -565,13 +565,13 @@ ggplot(plot_indval_data, aes(x = TRAT2, y = Order, size =stat, fill = stat)) +
 #ggsave("indicspecies_bubble.png")
 
 ###HEATMAP
-ggplot(plot_indval_data, aes(x = TRAT2, y = Genus, fill = Presence)) +
+ggplot(plot_indval_data, aes(x = TRAT2, y = Family, fill = Presence)) +
   geom_tile(color = "white") +  # Add white grid lines for clarity
   scale_fill_gradient(low = "white", high = "blue") +  # Adjust color scale
   theme_minimal() +
   labs(fill = "Indicator Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
-ggsave("indicspecies_heatmap.png")
+ggsave("indicspecies_fam_heatmap.png")
 
 ```
 
@@ -610,7 +610,6 @@ theme(
   )
 
 ```
-
 
 *PCoA (Principal Coordinate Analysis)*
 - A linear metric ordination technique.
