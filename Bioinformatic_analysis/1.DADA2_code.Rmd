@@ -255,6 +255,12 @@ cat("Total reads after chimera removal:", total_reads_after, "\n")
 #Number of ASV after chimera removal
 n_asvs <- ncol(seqtab.nochim)
 cat("total_ASVs", n_asvs, "\n")
+# Sum the total reads per sample
+sample_sums <- rowSums(seqtab.nochim)
+# Get the average number of sequences per sample
+average_sequences <- mean(sample_sums)
+# Print the result
+cat("Average number of sequences per sample:", average_sequences, "\n")
 ```
 
 ```{r Tracking}

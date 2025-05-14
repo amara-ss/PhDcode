@@ -23,10 +23,41 @@ if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
 BiocManager::install("microbiome")
+BiocManager::install(c("DECIPHER", "phangorn"))
 ```
 
 ```{r Colors}
 cols <- c("#41b6c4","#fd8d3c","#cb181d","#800026")
+```
+
+```{r Phylogenetic Tree}
+# We will generated from the final sequences table (from DADA2)
+asv_seqs <- colnames(seqtab.nochim)
+asv_names <- paste0("ASV", seq_along(asv_seqs))
+
+# Create DNAStringSet
+library(Biostrings)
+asv_dna <- DNAStringSet(asv_seqs)
+names(asv_dna) <- asv_names
+
+# Align sequences
+alignment <- AlignSeqs(asv_dna, anchor = NA)
+
+# Create a distance matrix
+phang_align <- phyDat(as(alignment, "matrix"), type = "DNA")
+dm <- dist.ml(phang_align)
+
+# Build tree
+treeNJ <- NJ(dm) # Neighbor-Joining tree as starting point
+
+# Optimize tree with maximum likelihood
+fit <- pml(treeNJ, data = phang_align)
+fitGTR <- update(fit, k = 4, inv = 0.2)
+fitGTR <- optim.pml(fitGTR, model = "GTR", optInv = TRUE, optGamma = TRUE,
+                    rearrangement = "stochastic", control = pml.control(trace = 0))
+
+# Extract final tree
+tree <- fitGTR$tree
 ```
 
 ```{r data required}
@@ -58,6 +89,9 @@ rownames(meta_data) <- paste0(1:80, "-FIREFUNGI")
 ####FunGuild
 #FG_matrix <- select(FG, confidenceRanking, trophicMode, guild, growthForm)
 #FG_matrix <- as(as.matrix(FG_matrix),"matrix")
+
+####Phylogenetic Tree
+
 ```
 
 The *phyloseq package* is a tool to import, store, analyze, and graphically display complex phylogenetic sequencing data that has already been clustered into Operational Taxonomic Units (OTUs), especially when there is associated sample data, phylogenetic tree, and/or taxonomic assignment of the OTUs. This package leverages many of the tools available in R for ecology and phylogenetic analysis (vegan, ade4, ape, picante), while also using advanced/flexible graphic systems (ggplot2) to easily produce publication-quality graphics of complex phylogenetic data. 
@@ -178,7 +212,7 @@ prevdf <- data.frame(Prevalence = prevdf$Prevalence,
 dfprev <- plyr::ddply(prevdf, "Kingdom", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
 ```
 
-```{r Filtering: unlikely taxa}
+```{r Filtering: unwanted taxa}
 #Based on the results above, we could decide to filter some Phylum out (the ones with less representation). We can also get rid of the Kingdoms not corresponding to fungi:
 #plot_bar(ps, fill = "Kingdom") + 
 #geom_bar(aes(color=Kingdom, fill=Kingdom), stat="identity", position="stack")
@@ -215,98 +249,163 @@ ggplot(sample_sum_df, aes(x = sum)) +
   theme(axis.title.y = element_blank()) 
 ```
 
-```{r Most abundant 5 phyla}
-phylum.sum = tapply(phyloseq::taxa_sums(ps1), tax_table(ps1)[, "Phylum"], sum, na.rm=TRUE)
-top5phyla = names(sort(phylum.sum, TRUE))[1:5]
-ps2 = phyloseq::prune_taxa((tax_table(ps1)[, "Phylum"] %in% top5phyla), ps1)
-ps2
-
-plot_bar(ps2, "Phylum", fill = "Phylum", facet_grid = ~TRAT2)
-```
-
 ```{r Ascomycota/Basidiomycota}
 # Filter to include only specified phyla
 filterPhylaAB <- c("p__Ascomycota", "p__Basidiomycota")
-ps4 = phyloseq::subset_taxa(ps1, Phylum %in% filterPhylaAB)
-# Normalize the data before filtering
-#p <- transform_sample_counts(ps2, function(x) { x / sum(x) } * 100)
-# Filter the normalized data
-#ps4 <- phyloseq::subset_taxa(p, Phylum %in% filterPhylaAB)
-# Melt the filtered and normalized data
-ps4melted <- psmelt(ps4)
+ps_ascobasidio = phyloseq::subset_taxa(ps1, Phylum %in% filterPhylaAB) #New Phyloseq object
+ntaxa(ps_ascobasidio)
+plot_bar(ps_ascobasidio, "Phylum", fill = "Phylum", facet_grid = ~TRAT2)
+
+ps_ascobasidio_topsoil <- subset_samples(ps_ascobasidio, DEPTH == "topsoil")
+plot_bar(ps_ascobasidio_topsoil, "Phylum", fill = "Phylum", facet_grid = ~TRAT2)
+ps_ascobasidio_subsoil <- subset_samples(ps_ascobasidio, DEPTH == "subsoil")
+plot_bar(ps_ascobasidio_subsoil, "Phylum", fill = "Phylum", facet_grid = ~TRAT2)
+
+ascobasidio_melted <- psmelt(ps_ascobasidio)
 
 ####### Summarize the data to calculate mean and SE 
-summary_data <- ps4melted %>%
+summary_data_ab <- ascobasidio_melted %>%
   dplyr::group_by(Phylum, DEPTH, TRAT2) %>%
   dplyr::summarise(
-    median_abundance = median(Abundance),
     mean_abundance = mean(Abundance),
     sd_abundance = sd(Abundance),
     se_abundance = sd(Abundance) / sqrt(n()))  # Calculate standard error
 
-#ps4melted <- ps4melted %>%
-#  left_join(summary_data, by = c("Phylum", "DEPTH", "TRAT2"))
+#Reshape the data from wide to long format to plot it
+soil_long <- summary_data_ab %>%
+  pivot_longer(cols = mean_abundance,
+                        names_to = "Abundance", values_to = "Mean") %>%
+  dplyr::select(Phylum, TRAT2, DEPTH, Abundance, Mean)
+soil_long_se <- summary_data_ab %>%
+  pivot_longer(cols = se_abundance,
+                        names_to = "SE_function", values_to = "SE") %>%
+  dplyr::select(Phylum, TRAT2, DEPTH,SE)
+
+soil_long <- summary_data_ab %>%
+  dplyr::select(Phylum, TRAT2, DEPTH, mean_abundance, se_abundance) %>%
+  dplyr::rename(Mean = mean_abundance, SE = se_abundance)
+
 
 # Set factors for DEPTH and TRAT2
-summary_data$DEPTH <- factor(summary_data$DEPTH, levels = c("topsoil", "subsoil"))
-summary_data$TRAT2 <- factor(summary_data$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
+ascobasidio_melted$DEPTH <- factor(ascobasidio_melted$DEPTH, levels = c("topsoil", "subsoil"))
+soil_long$TRAT2 <- factor(soil_long$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
+ascobasidio_melted$Phylum <- factor(ascobasidio_melted$Phylum, levels = c("p__Basidiomycota", "p__Ascomycota"))
 
 cols_2 <- c("#fed976","#fd8d3c")
 
 # Create the plot
-ggplot(summary_data, aes(x = Phylum, y = mean_abundance)) +
-  geom_bar(aes(color = Phylum, fill = Phylum), stat = "identity", position = "dodge") + 
-  geom_errorbar(aes(ymin = mean_abundance - se_abundance, ymax = mean_abundance + se_abundance), width = 0.2, position = position_dodge(0.9)) +
-  scale_color_manual(values = cols_2) +  # Use a Brewer palette
+ggplot(ascobasidio_melted, aes(x = Phylum, y = Abundance)) +
+  geom_bar(aes(fill = Phylum), stat = "identity", position = "dodge") + 
+  #geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), width = 0.2, position = position_dodge(0.9)) +
   scale_fill_manual(values = cols_2) +
   facet_grid(DEPTH ~ TRAT2) +
+  theme_bw()+
   theme(
     panel.grid = element_blank(),
     panel.grid.minor = element_blank(),
     axis.line = element_line(color = "black"),
     axis.text.x = element_blank(),
     axis.ticks = element_line(color = "black"),
+    strip.text = element_text(size = 12),
     strip.background = element_blank())  # Remove strip background
     #legend.position = "none"
-#ggsave("AscoBasidio2.png")
+#ggsave("AscoBasidio_meanabundance.png")
 ```
 
 ```{r Ascomycota/Basidiomycota Models}
-
 # Fit a Linear Mixed-Effects Model
 # Here, random effect is Sample (or any grouping variable) and fixed effects are Phylum, DEPTH, and TRAT2
-# Standardize the continuous variables
-ps4melted$mean_abundance <- scale(ps4melted$mean_abundance)
 
-
-lmm_results <- lmer(mean_abundance ~ Phylum * DEPTH * TRAT2 + (1|Sample), data = ps4melted)
+lmm_results <- lmer(Abundance ~ Phylum * DEPTH * TRAT2 + (1|Sample), data = ascobasidio_melted)
 
 par(mfrow=c(1,3))
 qqnorm(resid(lmm_results)); qqline(resid(lmm_results))
 hist(resid(lmm_results))
 plot(fitted(lmm_results), resid(lmm_results)); abline(h=0)
 par(mfrow=c(1,1))
+
+car::Anova(lmm_results, test.statistic="F", type=3)
+
+multcomp::cld(emmeans(lmm_results, ~TRAT2, type="response"), Letters=letters) #Tuckey's post-hoc test
 ```
 
-```{r Global summary of the phyloseq object}
-microbiome::summarize_phyloseq(ps2) #Results total number of reads and average number of reads by sample
+```{r Most abundant 5 phyla}
+order.sum = tapply(phyloseq::taxa_sums(ps_ascobasidio), 
+                   tax_table(ps_ascobasidio)[, "Order"], 
+                   sum, na.rm=TRUE)
+top10phyla = names(sort(order.sum, TRUE))[1:10]
+ps_TOP = phyloseq::prune_taxa((tax_table(ps_ascobasidio)[, "Order"] %in% top10phyla), ps_ascobasidio)
+ps_TOP
 
-global_df <- psmelt(ps2)
-head(global_df)
-#write.csv(global_df, "global_df.csv")
+plot_bar(ps_TOP, "Order", fill = "Order", facet_grid = ~TRAT2) 
+
+df_bar <- psmelt(ps_TOP)
+summary_df <- df_bar %>%
+    dplyr::group_by(Order, TRAT2, DEPTH) %>%
+    dplyr::summarise(
+    mean_abundance = mean(Abundance),
+    se_abundance = sd(Abundance) / sqrt(n()),
+    .groups = "drop"
+  )
+
+# fix order of factors
+summary_df$TRAT2 <- factor(summary_df$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
+df_bar$DEPTH <- factor(df_bar$DEPTH, levels = c("topsoil", "subsoil"))
+
+# Color palette (10 orders)
+cols10 <- RColorBrewer::brewer.pal(10, "Paired")
+
+# Barplot
+ggplot(df_bar, aes(x = Order, y = Abundance, fill = Order)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  #geom_errorbar(aes(ymin = mean_abundance - se_abundance,
+  #                  ymax = mean_abundance + se_abundance),
+  #              width = 0.2, position = position_dodge(0.9)) +
+  facet_grid(DEPTH ~ TRAT2) +
+  scale_fill_manual(values = cols10) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.ticks.x = element_blank(),
+    strip.text = element_text(size = 12)
+  ) 
+#ggsave("top10orders_raw.png")
 ```
 
 *Beta diversity* is going to account for the *turnover* across sites, treatments...
+It is based on distances --> we work with the *Hellinger transformed data*
+*Bray-Curtis* dissimilarity is indicated for ABUNDANCE data 
+
+```{r Hellinger transformation}
+# It is designed to transform count data or relative abundance data in a way that reduces the influence of large values and makes the data more suitable for techniques like Principal Component Analysis (PCA) or cluster analysis. The transformation helps in emphasizing the relative differences between samples.
+# It consist in 1) convert count data to proportions and 2) apply a square root transformation of 
+# It preserves EUCLIDEAN DISTANCES --> perfect for Beta-diversity and other analysis
+
+#Create a new phyloseq object:
+ps_hel <- ps1
+# Extract the OTU table
+otu_table_ps <- otu_table(ps_hel)
+taxa_rows <- taxa_are_rows(ps_hel)
+
+# Perform Hellinger transformation
+hellinger_otu_table <- vegan::decostand(as(otu_table_ps, "matrix"), method = "hellinger")
+# Replace the OTU table in the phyloseq object
+otu_table(ps_hel) <- otu_table(hellinger_otu_table, taxa_are_rows = taxa_rows)
+```
 
 ```{r Beta diversity}
-# Based on distances --> we work with the Hellinger transformed data
-GP.ord <- ordinate(ps1, "NMDS", "bray")
-p1 = plot_ordination(ps1, GP.ord, type="taxa", color="Phylum", title="taxa")
+
+dist_hel <- vegdist(hellinger_otu_table, method="bray")
+#heatmap(as.matrix(dist_hel))
+
+#Plot of the different ordination methods
+GP.ord <- ordinate(ps_hel, "NMDS", "bray")
+p1 = plot_ordination(ps_hel, GP.ord, type="taxa", color="Phylum", title="taxa")
 print(p1)
 
 p1 + facet_wrap(~Phylum, 3)
 
-p2 = plot_ordination(ps1, GP.ord, type="TRAT2", color="TRAT2", shape="DEPTH") 
+p2 = plot_ordination(ps_hel, GP.ord, type="TRAT2", color="TRAT2", shape="DEPTH") 
 p2 + geom_polygon(aes(fill=TRAT2)) + geom_point(size=5) + ggtitle("samples")
 
 ### Loop through different method parameter options to the plot_ordination function and store the plot results in a list. This code chunk performs each ordination method, creates the corresponding graphic based on the first two axes of each ordination result, and then stores each ggplot2 plot object in a different named element of the list named plist:
@@ -315,7 +414,7 @@ ord_meths = c("CCA", "RDA", "NMDS", "MDS", "PCoA")
 plist = llply(as.list(ord_meths), function(i, physeq, dist){
         ordi = ordinate(physeq, method=i, distance=dist)
         plot_ordination(physeq, ordi, "samples", color="TRAT2")
-}, ps1, dist)
+}, ps_hel, dist)
 
 names(plist) <- ord_meths
 
@@ -350,31 +449,16 @@ Works well with Bray-Curtis and other ecological dissimilarity metrics.
 Cannot directly compare axes across different NMDS runs.
 Stress values must be interpreted to determine fit (stress < 0.2 is acceptable, < 0.1 is ideal).
 
+- We can use the vegdist function to calculate our distance matrix if we need it for further analysis, but the *metaMDS function* will automatically calculate the distance matrix based on the type of distance we choose.
+
 ```{r NMDS}
-nmds_data <- plist[[3]]$data  # NMDS is the third method in plist
-
-# Rename axes for clarity
-colnames(nmds_data)[1:2] <- c("Axis_1", "Axis_2")
-nmds_data$DEPTH <- ordered(nmds_data$DEPTH, levels=c("topsoil", "subsoil"))
-
-ggplot(nmds_data, aes(x = Axis_1, y = Axis_2, color = TRAT2, fill = TRAT2)) +
-  geom_point(size = 4, alpha = 0.7) + 
-  geom_polygon(alpha = 0.2) +
-  scale_fill_manual(values = cols) + 
-  scale_colour_manual(values = cols) +
-  theme_minimal() +
-  facet_wrap(~DEPTH)+
-  labs(x = "NMDS Axis 1", y = "NMDS Axis 2")
-#ggsave("nmds_hel.png")
-
-#################
 OTU.ord <- ordinate(ps_hel, "NMDS", "bray")
 
-ps2_meta_data <- data.frame(sample_data(ps_hel))  # Get the metadata from the ps object
+ps_hel_meta_data <- data.frame(sample_data(ps_hel))  # Get the metadata from the ps object
 
 plot_vars <- c("Slope_per","Organic_layer_mean_depth_cm", "Charred_organic_layer_mean_cm", "Green_per", "Brown_per", "Consumed_per", "Grass_per", "Old_litter_per", "New_litter_per", "Mineral_per", "Ash_per", "Stone_per")
 
-env_df <- ps2_meta_data %>%
+env_df <- ps_hel_meta_data %>%
   dplyr::select(all_of(plot_vars))
 
 envfit_results  <- vegan::envfit(OTU.ord, env_df, permutations = 999, na.rm = TRUE)
@@ -398,12 +482,13 @@ plot_ordination(ps_hel, OTU.ord, color = "TRAT2") +
 #ggsave("nmds_hel.png")
 
 #####TOPSOIL
-ps2_topsoil <- subset_samples(ps2, DEPTH == "topsoil")
+ps_hel_topsoil <- subset_samples(ps_hel, DEPTH == "topsoil")
 
 # Perform ordination for topsoil samples
-OTU.ord_topsoil <- ordinate(ps2_topsoil, method = "NMDS", distance = "bray")
+OTU.ord_topsoil <- ordinate(ps_hel_topsoil, method = "NMDS", distance = "bray")
 
-env_df_TOP <- ps2_meta_data %>%
+#Add environmental data
+env_df_TOP <- ps_hel_meta_data %>%
   filter(DEPTH == "topsoil") %>%
   dplyr::select(all_of(plot_vars))
 
@@ -412,29 +497,29 @@ envfit_TOP  <- vegan::envfit(OTU.ord_topsoil, env_df_TOP, permutations = 999, na
 envfit_TOP_sig <- scores(envfit_TOP, "vectors")[envfit_TOP$vectors$pvals < 0.05, ] #Only the significant variables
 
 # Plot the ordination and add the environmental vectors
-plot_ordination(ps2, OTU.ord_topsoil, color = "TRAT2") +
+plot_ordination(ps_hel, OTU.ord_topsoil, color = "TRAT2") +
   geom_point(size = 4) +  # Adjust point size
-  geom_polygon(alpha = 0.2) +
+  geom_polygon(alpha = 0.1) +
   scale_fill_manual(values = cols) + 
   scale_colour_manual(values = cols) +
-  #geom_segment(data = as.data.frame(envfit_TOP_sig), 
-  #             aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
-  #             arrow = arrow(type = "open", length = unit(0.2, "inches")), 
-  #             size = 1, color = "blue") +
-  #geom_text(data = as.data.frame(envfit_TOP_sig), 
-  #          aes(x = NMDS1, y = NMDS2, label = rownames(envfit_TOP_sig)),
-  #          size = 3, color = "blue") +
+  geom_segment(data = as.data.frame(envfit_TOP_sig), 
+               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+               arrow = arrow(type = "open", length=unit(0.02, "npc")), 
+               size = 1, color = "#737373") +
+  geom_text(data = as.data.frame(envfit_TOP_sig), 
+            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_TOP_sig)),
+            size = 3, color = "#737373") +
   scale_x_reverse()+
   theme_minimal()
 #ggsave("nmdsTOP.png")
 
 #####SUBSOIL
-ps2_subsoil <- subset_samples(ps2, DEPTH == "subsoil")
+ps_hel_subsoil <- subset_samples(ps_hel, DEPTH == "subsoil")
 
 # Perform ordination for subsoil samples
-OTU.ord_subsoil <- ordinate(ps2_subsoil, method = "NMDS", distance = "bray")
+OTU.ord_subsoil <- ordinate(ps_hel_subsoil, method = "NMDS", distance = "bray")
 
-env_df_SUB <- ps2_meta_data %>%
+env_df_SUB <- ps_hel_meta_data %>%
   filter(DEPTH == "subsoil") %>%
   dplyr::select(all_of(plot_vars))
 
@@ -443,19 +528,19 @@ envfit_SUB  <- vegan::envfit(OTU.ord_subsoil, env_df_SUB, permutations = 999, na
 envfit_SUB_sig <- scores(envfit_SUB, "vectors")[envfit_SUB$vectors$pvals < 0.05, ] #Only the significant variables
 
 # Plot the ordination and add the environmental vectors
-plot_ordination(ps2, OTU.ord_subsoil, color = "TRAT2") +
+plot_ordination(ps_hel, OTU.ord_subsoil, color = "TRAT2") +
   geom_point(size = 4) +  # Adjust point size
   geom_polygon(alpha = 0.2) +
   scale_fill_manual(values = cols) + 
   scale_colour_manual(values = cols) +
-  #geom_segment(data = as.data.frame(envfit_SUB_sig), 
-  #             aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
-  #             arrow = arrow(type = "open", length = unit(0.2, "inches")), 
-  #             size = 1, color = "blue") +
-  #geom_text(data = as.data.frame(envfit_SUB_sig), 
-  #          aes(x = NMDS1, y = NMDS2, label = rownames(envfit_SUB_sig)),
-  #          size = 3, color = "blue") +
-  scale_x_reverse()+
+  geom_segment(data = as.data.frame(envfit_SUB_sig), 
+               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+               arrow = arrow(type = "open", length = unit(0.2, "inches")), 
+              size = 1, color = "#737373") +
+  geom_text(data = as.data.frame(envfit_SUB_sig), 
+            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_SUB_sig)),
+            size = 3, color = "#737373") +
+  #scale_x_reverse()+
   theme_minimal()
 #ggsave("nmdsSUB.png")
 ```
@@ -466,14 +551,14 @@ permanova <- vegan::adonis2(phyloseq::distance(ps_hel, method="bray") ~ TRAT2*DE
 permanova
 
 ####TOPSOIL
-meta_data_top <- data.frame(sample_data(ps2_topsoil))
-permanova_top <- vegan::adonis2(phyloseq::distance(ps2_topsoil, method="bray") ~ TRAT2,
+meta_data_top <- data.frame(sample_data(ps_hel_topsoil))
+permanova_top <- vegan::adonis2(phyloseq::distance(ps_hel_topsoil, method="bray") ~ TRAT2,
                                 permutations = 999, data = meta_data_top)
 permanova_top
 
 ####SUBSOIL
-meta_data_sub <- data.frame(sample_data(ps2_subsoil))
-permanova_sub <- vegan::adonis2(phyloseq::distance(ps2_subsoil, method="bray") ~ TRAT2,
+meta_data_sub <- data.frame(sample_data(ps_hel_subsoil))
+permanova_sub <- vegan::adonis2(phyloseq::distance(ps_hel_subsoil, method="bray") ~ TRAT2,
                                 permutations = 999, data = meta_data_sub)
 permanova_sub
 
@@ -482,6 +567,12 @@ permanova_sub
 ```
 
 *We've run all these analysis with the raw data and the Hellinger transformed data and results are practically the same*
+
+The *IndicSpecies Analysis* tells us:
+-Which ASVs (or taxa) are statistically associated with particular treatment groups (UB, LS, HS1, HS2).
+-A value = specificity (how exclusive the ASV is to a group),
+-B value = fidelity (how frequent the ASV is in that group)
+*Good for identifying indicator taxa for specific conditions* (e.g., taxa that define unburned soils vs high-severity fire soils)
 
 ```{r Indicator Species Analysis}
 ## Species are chosen as indicators if they:
@@ -493,8 +584,9 @@ permanova_sub
 ###############################
 # (1) the community data matrix --> with sites in rows and species in columns
 # (2) the vector that describes the classification of sites into groups --> a vector containing the classification of the sites into groups
+ps_TOP_meta_data <- data.frame(sample_data(ps_TOP))
 
-df <-  as.data.frame((otu_table(ps2))) #community data (abundance matrix)
+df <-  as.data.frame((otu_table(ps_TOP))) #community data (abundance matrix)
 head(df)
 
 # Transpose the table
@@ -503,8 +595,8 @@ head(asv_transposed)
 asv_transposed <- as.matrix(asv_transposed)
 
 #Now we need to code the vector of site groups. We want to do 4 groups: UB, LS, HS1, HS2
-head(ps2_meta_data$TRAT2)
-groups4 <- as.factor(ps2_meta_data$TRAT2)
+head(ps_TOP_meta_data$TRAT2)
+groups4 <- as.factor(ps_TOP_meta_data$TRAT2)
 
 #Indicator species analysis
 indval <- indicspecies::multipatt(asv_transposed, groups4, 
@@ -514,7 +606,7 @@ summary(indval)
 indval_results <- indval$sign
 #The first columns indicate (with ones and zeroes) which site groups were included in the combination preferred by the species. Then, the column indicates the index of the site group combination. The remaining two columns are the association statistic and the p-value of the permutational test.
 indval_df <- data.frame(ASV = rownames(indval_results), indval_results)
-df_tax <-  as.data.frame((tax_table(ps2)))
+df_tax <-  as.data.frame((tax_table(ps_TOP)))
 df_tax <- df_tax %>% 
   tibble::rownames_to_column(var = "ASV")
 indicator_with_taxonomy4 <- merge(indval_df, df_tax, by = "ASV")
@@ -529,8 +621,8 @@ summary(indval, indvalcomp=TRUE, alpha=1)
 
 #######################################################################
 #Now we want to do 8 groups: UB_topsoil, UB_subsoil, LS_topsoil, LS_subsoil, HS1_topsoil, HS1_subsoil, HS2_topsoil, HS2_subsoil
-head(ps2_meta_data$TRAT2_DEPTH)
-groups8 <- as.factor(ps2_meta_data$TRAT2_DEPTH)
+head(ps_TOP_meta_data$TRAT2_DEPTH)
+groups8 <- as.factor(ps_TOP_meta_data$TRAT2_DEPTH)
 
 #Indicator species analysis
 indval8 <- indicspecies::multipatt(asv_transposed, groups8, 
@@ -546,8 +638,9 @@ indicator_with_taxonomy8 <- merge(indval8_df, df_tax, by = "ASV")
 ############################## plot ####################################
 ###BUBBLE
 # Convert wide format to long format
-plot_indval_data <- indicator_with_taxonomy4 %>%
-  pivot_longer(cols = c(s.UB, s.LS, s.HS1, s.HS2), 
+plot_indval_data <- indicator_with_taxonomy8 %>%
+  pivot_longer(cols = c(s.UB_topsoil, s.UB_subsoil, s.LS_topsoil, s.LS_subsoil, 
+                        s.HS1_topsoil, s.HS1_subsoil, s.HS2_topsoil, s.HS2_subsoil), 
                names_to = "TRAT2", 
                values_to = "Presence") %>%
   
@@ -565,49 +658,27 @@ ggplot(plot_indval_data, aes(x = TRAT2, y = Order, size =stat, fill = stat)) +
 #ggsave("indicspecies_bubble.png")
 
 ###HEATMAP
-ggplot(plot_indval_data, aes(x = TRAT2, y = Family, fill = Presence)) +
+ggplot(plot_indval_data, aes(x = TRAT2, y = Order, fill = Presence)) +
   geom_tile(color = "white") +  # Add white grid lines for clarity
   scale_fill_gradient(low = "white", high = "blue") +  # Adjust color scale
   theme_minimal() +
   labs(fill = "Indicator Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
-ggsave("indicspecies_fam_heatmap.png")
+#ggsave("indicspecies_top10order_heatmap.png")
 
 ```
 
 ```{r}
-indicator_with_taxonomy4 <- indicator_with_taxonomy4 %>%
-  dplyr::mutate(TotalPresence = rowSums(across(c(s.UB, s.LS, s.HS1, s.HS2)))) %>%
-  dplyr::filter(TotalPresence==1) %>%
-  pivot_longer(cols = c(s.UB, s.LS, s.HS1, s.HS2), 
-               names_to = "TRAT2", 
-               values_to = "Presence") %>%
-  dplyr::filter(p.value < 0.05) #Only significant taxa
 
-indicator_with_taxonomy4$TRAT2 <- ordered(indicator_with_taxonomy4$TRAT2, levels = c("s.UB", "s.LS", "s.HS1", "s.HS2"))
+```
 
-ggplot(indicator_with_taxonomy4, aes(x = TRAT2, y = Family, fill= Presence)) +
-  geom_tile(color = "white") +  # Add white grid lines for clarity
-  scale_fill_gradient(low = "white", high = "blue") +  # Adjust color scale
-  theme_minimal() +
-  labs(fill = "Indicator Value") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+*Similarity Percentages Analysis* (SIMPER)
+- It decomposes Bray-Curtis dissimilarities between groups into contributions from individual taxa.
+- Good for identifying *which taxa drive differences in community composition* between pairs of groups.
 
-ggplot(indicator_with_taxonomy4, aes(x= TRAT2, y=Family, size =Presence, color = TRAT2)) +
-  geom_point()+
-  scale_size(range = c(.1, 8)) +
-  scale_color_manual(values = cols) +
-theme(
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.line = element_line(color = "black"),
-    axis.text = element_text(color = "black"),
-    axis.ticks = element_line(color = "black"),
-    strip.placement = "outside",  # Place strip labels outside the plot
-    strip.background = element_blank(),
-    legend.position = "none" # Remove strip background
-  )
+```{r SIMPER}
+simper_results <- simper(asv_transposed, groups4, permutations = 999)
+summary(simper_results)
 
 ```
 
@@ -710,23 +781,6 @@ ggplot(pcoa_sub_df, aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
    scale_x_reverse()+
   theme(legend.position = "none") 
 #ggsave("PCoA_sub.png")
-```
-
-```{r Hellinger transformation}
-# It is designed to transform count data or relative abundance data in a way that reduces the influence of large values and makes the data more suitable for techniques like Principal Component Analysis (PCA) or cluster analysis. The transformation helps in emphasizing the relative differences between samples.
-# It consist in 1) convert count data to proportions and 2) apply a square root transformation of 
-# It preserves EUCLIDEAN DISTANCES --> perfect for Beta-diversity and other analysis
-
-#Create a new phyloseq object:
-ps_hel <- ps2
-# Extract the OTU table
-otu_table_ps <- otu_table(ps_hel)
-taxa_rows <- taxa_are_rows(ps_hel)
-
-# Perform Hellinger transformation
-hellinger_otu_table <- vegan::decostand(as(otu_table_ps, "matrix"), method = "hellinger")
-# Replace the OTU table in the phyloseq object
-otu_table(ps_hel) <- otu_table(hellinger_otu_table, taxa_are_rows = taxa_rows)
 ```
 
 ```{r Principal Component Analysis (PCA)}
