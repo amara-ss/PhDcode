@@ -177,7 +177,7 @@ TRAT2_order <- c("UB", "LS", "HS1", "HS2")
 sample_data(ps1)$TRAT2 <- factor(sample_data(ps1)$TRAT2, levels = TRAT2_order)
 
 plot_richness(ps1, color = "TRAT2", x = "TRAT2", 
-              measures = c("Observed", "Shannon", "Chao1")) + 
+              measures = c("Observed")) + 
   geom_boxplot(aes(fill = TRAT2), alpha=.7) + 
   scale_color_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) + 
   scale_fill_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) +
@@ -192,6 +192,25 @@ plot_richness(ps1, color = "TRAT2", x = "TRAT2",
     legend.position = "none"             # Remove legend
   )
 #ggsave("alpha_div_k_fungi.png")
+
+ggplot(alpha_fungi, aes(x=TRAT2, y = observed, alpha=.9, color=TRAT2))+
+  geom_point()+
+  geom_boxplot(aes(fill = TRAT2)) + 
+  scale_color_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) + 
+  scale_fill_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) +
+  theme_bw()+
+  theme(
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(),
+    strip.background = element_blank(),  # Remove strip background
+    axis.text.x = element_text(angle = 0.1, hjust = 1),  # Rotate x-axis labels
+    panel.background = element_blank(),  # Remove panel background color
+    plot.background = element_blank(),   # Remove plot background color
+    legend.position = "none"             # Remove legend
+  )+
+  facet_grid(~DEPTH)
+#ggsave("observed_div_k_fungi.png")
 ```
 
 ```{r Quality analysis}
