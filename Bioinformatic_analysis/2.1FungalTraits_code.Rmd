@@ -26,8 +26,6 @@ ps1melted <- psmelt(ps1) #We want to add the FungalTraits info to the melted onl
 fungal_traits <- fungal_traits() #As we can see, the Genus column is clean. However in our dataset every genus name contains a "g__" as a prefix. In order to match both datasets we need to get rid of that prefix:
 
 ps1melted$Genus_clean <- gsub("^g__", "", ps1melted$Genus)
-
-
 ```
 
 ```{r Genus level assignation}

@@ -15,7 +15,7 @@ output:
 
 ```{r Packages}
 #install.packages("pacman")
-pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car", "plyr", "ggpubr", "ggsignif")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car", "plyr", "ggpubr", "ggsignif", "ape", "cooccur", "igraph")
 ```
 
 ```{r}
@@ -40,24 +40,26 @@ library(Biostrings)
 asv_dna <- DNAStringSet(asv_seqs)
 names(asv_dna) <- asv_names
 
+#To work with the *phangorn* package to build a tree the first step is reading an alignment:
 # Align sequences
 alignment <- AlignSeqs(asv_dna, anchor = NA)
 
+#After reading in the nucleotide alignment we can build a first tree with distance based methods. 
 # Create a distance matrix
 phang_align <- phyDat(as(alignment, "matrix"), type = "DNA")
 dm <- dist.ml(phang_align)
 
 # Build tree
-treeNJ <- NJ(dm) # Neighbor-Joining tree as starting point
+treeUPGMA  <- upgma(dm) # Is a simple agglomerative (bottom-up) hierarchical clustering method --> rooted
+#plot(treeUPGMA, main="UPGMA")
+treeNJ <- NJ(dm) # Neighbor-Joining tree --> unrooted
+#plot(treeNJ, "unrooted", main="NJ")
 
-# Optimize tree with maximum likelihood
-fit <- pml(treeNJ, data = phang_align)
-fitGTR <- update(fit, k = 4, inv = 0.2)
-fitGTR <- optim.pml(fitGTR, model = "GTR", optInv = TRUE, optGamma = TRUE,
-                    rearrangement = "stochastic", control = pml.control(trace = 0))
+# Bootstrap
+fun <- function(x) upgma(dist.ml(x))
+bs_upgma <- bootstrap.phyDat(phang_align,  fun)
 
-# Extract final tree
-tree <- fitGTR$tree
+
 ```
 
 ```{r data required}
@@ -348,11 +350,11 @@ car::Anova(lmm_results, test.statistic="F", type=3)
 multcomp::cld(emmeans(lmm_results, ~TRAT2, type="response"), Letters=letters) #Tuckey's post-hoc test
 ```
 
-```{r Most abundant 5 phyla}
+```{r Most abundant 5 Order}
 order.sum = tapply(phyloseq::taxa_sums(ps_ascobasidio), 
                    tax_table(ps_ascobasidio)[, "Order"], 
                    sum, na.rm=TRUE)
-top10phyla = names(sort(order.sum, TRUE))[1:10]
+top10phyla = names(sort(order.sum, TRUE))[1:5]
 ps_TOP = phyloseq::prune_taxa((tax_table(ps_ascobasidio)[, "Order"] %in% top10phyla), ps_ascobasidio)
 ps_TOP
 
@@ -372,7 +374,7 @@ summary_df$TRAT2 <- factor(summary_df$TRAT2, levels = c("UB", "LS", "HS1", "HS2"
 df_bar$DEPTH <- factor(df_bar$DEPTH, levels = c("topsoil", "subsoil"))
 
 # Color palette (10 orders)
-cols10 <- RColorBrewer::brewer.pal(10, "Paired")
+cols5 <- RColorBrewer::brewer.pal(5, "Paired")
 
 # Barplot
 ggplot(df_bar, aes(x = Order, y = Abundance, fill = Order)) +
@@ -381,14 +383,34 @@ ggplot(df_bar, aes(x = Order, y = Abundance, fill = Order)) +
   #                  ymax = mean_abundance + se_abundance),
   #              width = 0.2, position = position_dodge(0.9)) +
   facet_grid(DEPTH ~ TRAT2) +
-  scale_fill_manual(values = cols10) +
+  scale_fill_manual(values = cols5) +
   theme_bw() +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1),
     axis.ticks.x = element_blank(),
     strip.text = element_text(size = 12)
   ) 
-#ggsave("top10orders_raw.png")
+#ggsave("top5orders_raw.png")
+```
+
+```{r Buubles top 10 Order}
+ggplot(df_bar, aes(x= TRAT2, y=Order, size = Abundance, color=TRAT2)) +
+  geom_point()+
+  scale_size(range = c(.1, 15)) +
+  scale_color_manual(values = cols) +
+theme(
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    strip.placement = "outside",  # Place strip labels outside the plot
+    strip.background = element_blank(),
+    legend.position = "none" # Remove strip background
+  ) +
+  facet_wrap(~DEPTH)
+#ggsave("Bubbles_top10phyla.png")
 ```
 
 *Beta diversity* is going to account for the *turnover* across sites, treatments...
@@ -413,7 +435,6 @@ otu_table(ps_hel) <- otu_table(hellinger_otu_table, taxa_are_rows = taxa_rows)
 ```
 
 ```{r Beta diversity}
-
 dist_hel <- vegdist(hellinger_otu_table, method="bray")
 #heatmap(as.matrix(dist_hel))
 
@@ -657,7 +678,14 @@ indicator_with_taxonomy8 <- merge(indval8_df, df_tax, by = "ASV")
 ############################## plot ####################################
 ###BUBBLE
 # Convert wide format to long format
-plot_indval_data <- indicator_with_taxonomy8 %>%
+plot_indval_data4 <- indicator_with_taxonomy4 %>%
+  pivot_longer(cols = c(s.UB, s.LS, s.HS1, s.HS2), 
+               names_to = "TRAT2", 
+               values_to = "Presence") %>%
+  
+  dplyr::filter(p.value < 0.05) #Only significant taxa
+
+plot_indval_data8 <- indicator_with_taxonomy8 %>%
   pivot_longer(cols = c(s.UB_topsoil, s.UB_subsoil, s.LS_topsoil, s.LS_subsoil, 
                         s.HS1_topsoil, s.HS1_subsoil, s.HS2_topsoil, s.HS2_subsoil), 
                names_to = "TRAT2", 
@@ -687,10 +715,6 @@ ggplot(plot_indval_data, aes(x = TRAT2, y = Order, fill = Presence)) +
 
 ```
 
-```{r}
-
-```
-
 *Similarity Percentages Analysis* (SIMPER)
 - It decomposes Bray-Curtis dissimilarities between groups into contributions from individual taxa.
 - Good for identifying *which taxa drive differences in community composition* between pairs of groups.
@@ -698,7 +722,20 @@ ggplot(plot_indval_data, aes(x = TRAT2, y = Order, fill = Presence)) +
 ```{r SIMPER}
 simper_results <- simper(asv_transposed, groups4, permutations = 999)
 summary(simper_results)
+```
 
+```{r Species co-ocurrence}
+# Convert abundance data to presence/absence (1 if >0, else 0)
+otu_mat <- as.data.frame(otu_table(ps_TOP)) 
+
+asv_pa <- ifelse(otu_mat > 0, 1, 0)
+
+cooccur_result <- cooccur(asv_pa, type = "spp_site")
+
+#png("cooccurrence_plot.png", width = 800, height = 800) 
+par(mfrow=c(2,1))
+plot(cooccur_result)
+#dev.off()
 ```
 
 *PCoA (Principal Coordinate Analysis)*
@@ -802,9 +839,7 @@ ggplot(pcoa_sub_df, aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
 #ggsave("PCoA_sub.png")
 ```
 
-```{r Principal Component Analysis (PCA)}
 
-```
 
 
 
@@ -838,65 +873,6 @@ sample_relabun_ASV_table <- sample_relabun_ASV_table[order(sample_relabun_ASV_ta
 colSums(sample_relabun_ASV_table[,8:ncol(sample_relabun_ASV_table)])
 ##See table
 head(sample_relabun_ASV_table)
-```
-
-```{r}
-### GET TABLE BY SAMPLE AT GENUS LEVEL ###
-# This chunk will give us information of the relative abundance of each ASV by treatment (eg.: we can see that ASV1 has the highest relative abundance for the HS2 while for the UB the most abundant is ASV10)
-
-#Glom phyloseq
-loc_phyloseq_genus <- tax_glom(ps3, taxrank = "Genus") #Change Genus to the desired taxonomic rank
-sample_relabun_genus <- transform_sample_counts(loc_phyloseq_genus, function(x){x/sum(x)}*100)
-##Extract elements from phyloseq
-OTU_sample_genus <-  as.data.frame((otu_table(sample_relabun_genus)))
-taxonomy_sample_genus  <- as.data.frame(tax_table(sample_relabun_genus)[,-7])
-identical(rownames(OTU_sample_genus),rownames(taxonomy_sample_genus))
-#> [1] TRUE
-#Bind table
-sample_table_genus  <- cbind(taxonomy_sample_genus, OTU_sample_genus)
-#Sort table from most to least abundant genera (calculated as sum of abundance between samples)
-sample_table_genus_final <- sample_table_genus [order(rowSums(sample_table_genus [,7:ncol(sample_table_genus )]), decreasing=TRUE),]
-#See first lines of this table
-head(sample_table_genus_final)
-
-### GROUP GENUS TABLE BY LOCATION/TREATMENT
-#Save genus abundances
-otu_genus <- sample_table_genus_final[,7:ncol(sample_table_genus_final)] %>% t() %>% as.data.frame()
-#Save taxonomy data
-tax_genus <- sample_table_genus_final[,1:6]
-#Calculate OTU mean abundance based on grouping factor (e.g., location)
-location_mean_genus <- aggregate(otu_genus, by=list(meta_data$TRAT2), FUN=mean)%>% column_to_rownames("Group.1") %>% t() #Change meta_data and TRAT2 to your metadata and variable of interest
-#Calculate OTU SD  based on grouping factor (e.g., location) and change colnames
-location_SD_genus <- aggregate(otu_genus, by=list(meta_data$TRAT2), FUN=sd)%>% column_to_rownames("Group.1")  %>% t()  %>% #Change metadata.micro and location to your metadata and variable of interest
-as.data.frame() %>% rename_with(.fn= ~paste0(colnames(location_mean_genus), "SD"))
-#Merge mean abundance, SD and taxonomy.
-genus_location_table <- merge(tax_genus, location_mean_genus, by=0) %>%column_to_rownames("Row.names") %>%
-merge(location_SD_genus, by=0) %>% column_to_rownames("Row.names")
-#Check abundances sum 100
-colSums(genus_location_table[,7:ncol(genus_location_table)])
-#Sort table from most to least abundant genera (calculated as sum of abundance between samples)
-genus_location_table <- genus_location_table[order(rowSums(genus_location_table[,7:ncol(genus_location_table)]), decreasing=TRUE),]
-#View table
-head(genus_location_table)
-```
-
-```{r Abundances Violin: all phyla}
-plot_abundance = function(physeq, ylabn = "", 
-                          Facet = "Phylum", 
-                          Color = "Phylum"){ 
-  mphyseq = psmelt(physeq) 
-  mphyseq <- subset(mphyseq, Abundance > 0) 
-  ggplot(data = mphyseq, 
-         mapping = aes_string(x = "TRAT2", y = "Abundance", 
-                              color = Color, fill = Color)) + 
-    geom_violin(fill = NA) + 
-    geom_point(size = 1, alpha = 0.3, position = position_jitter(width = 0.3)) + 
-    facet_wrap(facets = Facet) + 
-    ylab(ylabn) + 
-    scale_y_log10() }
-
-plot_abundance(ps3,"Original Abundances") 
-#ggsave("abun_ps3.png")
 ```
 
 ```{r Abundances: Top9 Genus}
