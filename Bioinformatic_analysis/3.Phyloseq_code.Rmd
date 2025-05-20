@@ -239,7 +239,6 @@ dfprev <- plyr::ddply(prevdf, "Kingdom", function(df1){cbind(mean(df1$Prevalence
 #geom_bar(aes(color=Kingdom, fill=Kingdom), stat="identity", position="stack")
 
 ps1 = phyloseq::subset_taxa(ps, Kingdom=="k__Fungi")
-ps1
 
 #plot_bar(ps1, fill = "Kingdom") + 
 #geom_bar(aes(color=Kingdom, fill=Kingdom), stat="identity", position="stack")
@@ -270,54 +269,71 @@ ggplot(sample_sum_df, aes(x = sum)) +
   theme(axis.title.y = element_blank()) 
 ```
 
+```{r Agglomerate by taxonomic ranks}
+# This step is necessary when we work with taxonomic ranks above ASV
+# Phylum -> For example, in this case we need 2 numbers per sample (UB_TOPSOIL_1: one number for Ascomycota and one for Basidio)
+ps1_phylum <- tax_glom(ps1, taxrank = "Phylum")
+sample_data(ps1_phylum)
+tax_table(ps1_phylum)
+ps1_phylum_melted <- psmelt(ps1_phylum)
+
+# Class
+ps1_class <- tax_glom(ps1, taxrank = "Class")
+sample_data(ps1_class)
+tax_table(ps1_class)
+ps1_class_melted <- psmelt(ps1_class)
+
+# Order
+ps1_order <- tax_glom(ps1, taxrank = "Order")
+sample_data(ps1_order)
+tax_table(ps1_order)
+ps1_order_melted <- psmelt(ps1_order)
+
+# Family
+ps1_family <- tax_glom(ps1, taxrank = "Family")
+sample_data(ps1_family)
+tax_table(ps1_family)
+ps1_family_melted <- psmelt(ps1_family)
+
+# Genus
+ps1_genus <- tax_glom(ps1, taxrank = "Genus")
+sample_data(ps1_genus)
+tax_table(ps1_genus)
+ps1_genus_melted <- psmelt(ps1_genus)
+```
+
 ```{r Ascomycota/Basidiomycota}
 # Filter to include only specified phyla
 filterPhylaAB <- c("p__Ascomycota", "p__Basidiomycota")
-ps_ascobasidio = phyloseq::subset_taxa(ps1, Phylum %in% filterPhylaAB) #New Phyloseq object
-ntaxa(ps_ascobasidio)
-plot_bar(ps_ascobasidio, "Phylum", fill = "Phylum", facet_grid = ~TRAT2)
+ps_ascobasidio = phyloseq::subset_taxa(ps1_phylum, Phylum %in% filterPhylaAB) #New Phyloseq object
+sample_data(ps_ascobasidio)
 
-ps_ascobasidio_topsoil <- subset_samples(ps_ascobasidio, DEPTH == "topsoil")
-plot_bar(ps_ascobasidio_topsoil, "Phylum", fill = "Phylum", facet_grid = ~TRAT2)
-ps_ascobasidio_subsoil <- subset_samples(ps_ascobasidio, DEPTH == "subsoil")
-plot_bar(ps_ascobasidio_subsoil, "Phylum", fill = "Phylum", facet_grid = ~TRAT2)
+#plot_bar(ps_ascobasidio, "Phylum", fill = "Phylum", facet_grid = ~TRAT2)
 
 ascobasidio_melted <- psmelt(ps_ascobasidio)
 
 ####### Summarize the data to calculate mean and SE 
 summary_data_ab <- ascobasidio_melted %>%
-  dplyr::group_by(Phylum, DEPTH, TRAT2) %>%
+  dplyr::group_by(Phylum, TRAT2, DEPTH) %>%
   dplyr::summarise(
-    mean_abundance = mean(Abundance),
+    mean_abundance = mean(Abundance, na.rm = TRUE),
+    true_mean = sum(Abundance)/n(),
+    count = n(),
+    sum_abundance = sum(Abundance),
     sd_abundance = sd(Abundance),
     se_abundance = sd(Abundance) / sqrt(n()))  # Calculate standard error
 
-#Reshape the data from wide to long format to plot it
-soil_long <- summary_data_ab %>%
-  pivot_longer(cols = mean_abundance,
-                        names_to = "Abundance", values_to = "Mean") %>%
-  dplyr::select(Phylum, TRAT2, DEPTH, Abundance, Mean)
-soil_long_se <- summary_data_ab %>%
-  pivot_longer(cols = se_abundance,
-                        names_to = "SE_function", values_to = "SE") %>%
-  dplyr::select(Phylum, TRAT2, DEPTH,SE)
-
-soil_long <- summary_data_ab %>%
-  dplyr::select(Phylum, TRAT2, DEPTH, mean_abundance, se_abundance) %>%
-  dplyr::rename(Mean = mean_abundance, SE = se_abundance)
-
-
 # Set factors for DEPTH and TRAT2
-ascobasidio_melted$DEPTH <- factor(ascobasidio_melted$DEPTH, levels = c("topsoil", "subsoil"))
-soil_long$TRAT2 <- factor(soil_long$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
-ascobasidio_melted$Phylum <- factor(ascobasidio_melted$Phylum, levels = c("p__Basidiomycota", "p__Ascomycota"))
+summary_data_ab$DEPTH <- factor(summary_data_ab$DEPTH, levels = c("topsoil", "subsoil"))
+summary_data_ab$TRAT2 <- factor(summary_data_ab$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
+summary_data_ab$Phylum <- factor(summary_data_ab$Phylum, levels = c("p__Basidiomycota", "p__Ascomycota"))
 
 cols_2 <- c("#fed976","#fd8d3c")
 
 # Create the plot
-ggplot(ascobasidio_melted, aes(x = Phylum, y = Abundance)) +
+ggplot(summary_data_ab, aes(x = Phylum, y = mean_abundance)) +
   geom_bar(aes(fill = Phylum), stat = "identity", position = "dodge") + 
-  #geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), width = 0.2, position = position_dodge(0.9)) +
+  geom_errorbar(aes(ymin = mean_abundance - se_abundance, ymax = mean_abundance + se_abundance), width = 0.2, position = position_dodge(0.9)) +
   scale_fill_manual(values = cols_2) +
   facet_grid(DEPTH ~ TRAT2) +
   theme_bw()+
@@ -347,15 +363,17 @@ par(mfrow=c(1,1))
 
 car::Anova(lmm_results, test.statistic="F", type=3)
 
-multcomp::cld(emmeans(lmm_results, ~TRAT2, type="response"), Letters=letters) #Tuckey's post-hoc test
+multcomp::cld(emmeans(lmm_results, ~TRAT2*DEPTH, type="response"), Letters=letters) #Tuckey's post-hoc test
+
+#NO SIGNIFICANT DIFFERENCES AMONG FIRE SEVERITIES OR DEPTHS
 ```
 
 ```{r Most abundant 5 Order}
-order.sum = tapply(phyloseq::taxa_sums(ps_ascobasidio), 
-                   tax_table(ps_ascobasidio)[, "Order"], 
+order.sum = tapply(phyloseq::taxa_sums(ps1_order), 
+                   tax_table(ps1_order)[, "Order"], 
                    sum, na.rm=TRUE)
-top10phyla = names(sort(order.sum, TRUE))[1:5]
-ps_TOP = phyloseq::prune_taxa((tax_table(ps_ascobasidio)[, "Order"] %in% top10phyla), ps_ascobasidio)
+top10phyla = names(sort(order.sum, TRUE))[1:6]
+ps_TOP = phyloseq::prune_taxa((tax_table(ps1_order)[, "Order"] %in% top10phyla), ps1_order)
 ps_TOP
 
 plot_bar(ps_TOP, "Order", fill = "Order", facet_grid = ~TRAT2) 
@@ -365,32 +383,34 @@ summary_df <- df_bar %>%
     dplyr::group_by(Order, TRAT2, DEPTH) %>%
     dplyr::summarise(
     mean_abundance = mean(Abundance),
-    se_abundance = sd(Abundance) / sqrt(n()),
-    .groups = "drop"
-  )
+    sum_abundance = sum(Abundance),
+    se_abundance = sd(Abundance) / sqrt(n()))
 
 # fix order of factors
 summary_df$TRAT2 <- factor(summary_df$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
-df_bar$DEPTH <- factor(df_bar$DEPTH, levels = c("topsoil", "subsoil"))
+summary_df$DEPTH <- factor(summary_df$DEPTH, levels = c("topsoil", "subsoil"))
 
 # Color palette (10 orders)
-cols5 <- RColorBrewer::brewer.pal(5, "Paired")
+cols5 <- RColorBrewer::brewer.pal(6, "Paired")
 
 # Barplot
-ggplot(df_bar, aes(x = Order, y = Abundance, fill = Order)) +
+ggplot(summary_df, aes(x = Order, y = mean_abundance, fill = Order)) +
   geom_bar(stat = "identity", position = "dodge") +
-  #geom_errorbar(aes(ymin = mean_abundance - se_abundance,
-  #                  ymax = mean_abundance + se_abundance),
-  #              width = 0.2, position = position_dodge(0.9)) +
+  geom_errorbar(aes(ymin = mean_abundance - se_abundance,
+                    ymax = mean_abundance + se_abundance),
+                    width = 0.2, position = position_dodge(0.9)) +
   facet_grid(DEPTH ~ TRAT2) +
   scale_fill_manual(values = cols5) +
   theme_bw() +
   theme(
+    #panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
     axis.text.x = element_text(angle = 45, hjust = 1),
     axis.ticks.x = element_blank(),
-    strip.text = element_text(size = 12)
+    strip.text = element_text(size = 12),
+    legend.position = "none"
   ) 
-#ggsave("top5orders_raw.png")
+#ggsave("top6orders.png")
 ```
 
 ```{r Buubles top 10 Order}
@@ -498,10 +518,25 @@ ps_hel_meta_data <- data.frame(sample_data(ps_hel))  # Get the metadata from the
 
 plot_vars <- c("Slope_per","Organic_layer_mean_depth_cm", "Charred_organic_layer_mean_cm", "Green_per", "Brown_per", "Consumed_per", "Grass_per", "Old_litter_per", "New_litter_per", "Mineral_per", "Ash_per", "Stone_per")
 
+ps_hel_meta_data <- ps_hel_meta_data %>% 
+  mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
+         Ergosterol_µg_g = Ergosterol_ng_g_105/1000,
+         C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
+chem_vars <- c("pH", "EC", "densidad_revisada_25", "C_N_ratio",
+              "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", 
+              "NH4_mgL_105","NO3_mgL_105", "Ergosterol_µg_g", 
+              "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
+              "Nitrogen_stock_Mg_ha", "SOM_per_corregido", "MBC_mg_kg_105",
+              "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
+              "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")
+
 env_df <- ps_hel_meta_data %>%
   dplyr::select(all_of(plot_vars))
 
-envfit_results  <- vegan::envfit(OTU.ord, env_df, permutations = 999, na.rm = TRUE)
+env2_df <- ps_hel_meta_data %>%
+  dplyr::select(all_of(chem_vars))
+
+envfit_results  <- vegan::envfit(OTU.ord, env2_df, permutations = 999, na.rm = TRUE)
 
 env_coord_sig0 <- scores(envfit_results, "vectors")[envfit_results$vectors$pvals < 0.05, ] #Only the significant variables
 
@@ -511,13 +546,13 @@ plot_ordination(ps_hel, OTU.ord, color = "TRAT2") +
   geom_polygon(alpha = 0.2) +
   scale_fill_manual(values = cols) + 
   scale_colour_manual(values = cols) +
-  #geom_segment(data = as.data.frame(env_coord_sig0), 
-  #             aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
-  #             arrow = arrow(type = "open", length = unit(0.2, "inches")), 
-  #             size = 1, color = "blue") +
-  #geom_text(data = as.data.frame(env_coord_sig0), 
-  #          aes(x = NMDS1, y = NMDS2, label = rownames(env_coord_sig0)),
-  #          size = 3, color = "blue") +
+  geom_segment(data = as.data.frame(env_coord_sig0), 
+               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+               arrow = arrow(type = "open", length = unit(0.2, "inches")), 
+               size = 1, color = "blue") +
+  geom_text(data = as.data.frame(env_coord_sig0), 
+            aes(x = NMDS1, y = NMDS2, label = rownames(env_coord_sig0)),
+            size = 3, color = "blue") +
   theme_minimal()
 #ggsave("nmds_hel.png")
 
