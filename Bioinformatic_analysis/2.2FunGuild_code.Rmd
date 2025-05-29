@@ -1,0 +1,30 @@
+---
+title: "FunGuild analysis of Navalacruz 2021 dataset sampling"
+author: "Amara Santiesteban Serrano"
+date: " r format(Sys.time(), '%d %B, %Y') "
+output: 
+  html_document:
+    df_print: paged
+    pdf_document: default
+    word_document: default
+  editor_options:
+    chunk_output_type: inline
+---
+
+```{r}
+devtools::install_github("brendanf/FUNGuildR")
+library(FUNGuildR)
+```
+
+```{r}
+tax_df <- as.data.frame(tax_table(ps1))
+# Unir las columnas de taxonomía en una única columna de texto separada por punto y coma
+tax_df$Taxonomy <- apply(tax_df, 1, function(x) paste(na.omit(x), collapse = ";"))
+```
+
+```{r}
+# 1. Intenta descargar la base de datos localmente
+fg_db <- FUNGuildR::get_funguild_db()
+
+```
+

@@ -21,82 +21,20 @@ library(fungaltraits)
 ```
 
 ```{r}
- #We want to add the FungalTraits info to the melted only-fungi phyloseq object
-
 fungal_traits <- fungal_traits() #As we can see, the Genus column is clean. However in our dataset every genus name contains a "g__" as a prefix. In order to match both datasets we need to get rid of that prefix:
 
-ps1melted$Species_clean <- gsub("^s__", "", ps1melted$Species)
+clustered_taxa <- as.data.frame(clustered_taxa)
+clustered_taxa$Genus <- gsub("^g__", "", clustered_taxa$Genus)
+genus_names <- clustered_taxa[, "Genus"]
 ```
 
 ```{r Genus level assignation}
-ps1melted_traits <- left_join(ps1melted, fungal_traits, 
-                              by = c("Genus_clean" = "Genus"))
+# Filtrar el dataframe de fungal_traits para que solo incluya los géneros presentes en asv_postclustering
+FT_genus <- fungal_traits %>%
+  filter(Genus %in% clustered_taxa$Genus)
 
-ps1melted_traits_clean <- ps1melted_traits %>%
-  filter(!is.na(trophic_mode_fg))
-
-ps1melted_traits_clean$DEPTH <- factor(ps1melted_traits_clean$DEPTH, levels = c("topsoil", "subsoil"))
-
-ps1melted_traits_clean %>%
-  dplyr::group_by(Sample, trophic_mode_fg, TRAT2, DEPTH) %>%
-  dplyr::summarise(TotalAbund = sum(Abundance), .groups = "drop") %>%
-  ggplot(aes(x = trophic_mode_fg, y = TotalAbund, fill = trophic_mode_fg)) +
-  geom_boxplot(width = 0.6, outlier.size = 0.8, alpha = 0.8) +
-  #scale_fill_brewer(palette = "Set2") +  
-  facet_grid(DEPTH ~ TRAT2, scales = "free_y") +
-  theme_bw() +
-  theme(
-    axis.text.x = element_blank(),  # quitar etiquetas del eje x
-    axis.ticks.x = element_blank(),
-    panel.grid = element_blank(),
-    strip.text = element_text(size = 12),
-    legend.position = "bottom",  
-    legend.title = element_blank()
-  ) +
-  labs(x = NULL, y = "Total abundance")
-#ggsave("FungalTraits_trophic.png")
-```
-
-```{r Symbiotrophs}
-ps1melted_traits_clean %>%
-  dplyr::filter(trophic_mode_fg == "Symbiotroph") %>%
-  dplyr::group_by(Sample, growth_form_fg, TRAT2, DEPTH) %>%
-  dplyr::summarise(TotalAbund = sum(Abundance), .groups = "drop") %>%
-  ggplot(aes(x = growth_form_fg, y = TotalAbund, fill = growth_form_fg)) +
-  geom_boxplot(width = 0.6, outlier.size = 0.8, alpha = 0.8) +
-  scale_fill_brewer(palette = "Set2") +
-  facet_grid(DEPTH ~ TRAT2) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    panel.grid = element_blank(),
-    strip.text = element_text(size = 12),
-    #legend.position = "none"
-  ) +
-  labs(x = NULL, y = "Total abundance of symbiotrophs")
-#ggsave("FungalTraits_SymbioForm.png")
-```
-
-```{r Pathotrophs}
-ps1melted_traits_clean %>%
-  dplyr::filter(trophic_mode_fg == "Pathotroph") %>%
-  dplyr::group_by(Sample, growth_form_fg, TRAT2, DEPTH) %>%
-  dplyr::summarise(TotalAbund = sum(Abundance), .groups = "drop") %>%
-  ggplot(aes(x = growth_form_fg, y = TotalAbund, fill = growth_form_fg)) +
-  geom_boxplot(width = 0.6, outlier.size = 0.8, alpha = 0.8) +
-  scale_fill_brewer(palette = "Set2") +
-  facet_grid(DEPTH ~ TRAT2) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    panel.grid = element_blank(),
-    strip.text = element_text(size = 12),
-    #legend.position = "none"
-  ) +
-  labs(x = NULL, y = "Total abundance of symbiotrophs")
-#ggsave("FungalTraits_PathoForm.png")
+# Ver las primeras filas del resultado
+head(FT_genus)
 ```
 
 **FunGUILD**
