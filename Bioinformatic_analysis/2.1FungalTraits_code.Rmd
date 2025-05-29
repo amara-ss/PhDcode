@@ -18,62 +18,204 @@ output:
 #devtools::install_github("ropenscilabs/datastorr")
 #devtools::install_github("traitecoevo/fungaltraits")
 library(fungaltraits)
+#install.packages("Polychrome")
+library(Polychrome)
 ```
 
-```{r}
+```{r Uploading FungalTraits database}
 fungal_traits <- fungal_traits() #As we can see, the Genus column is clean. However in our dataset every genus name contains a "g__" as a prefix. In order to match both datasets we need to get rid of that prefix:
-
-clustered_taxa <- as.data.frame(clustered_taxa)
-clustered_taxa$Genus <- gsub("^g__", "", clustered_taxa$Genus)
-genus_names <- clustered_taxa[, "Genus"]
+head(fungal_traits)
+ps1_genus_melted$Genus_clean <- gsub("^g__", "", ps1_genus_melted$Genus)
+#write.csv(ps1_genus_melted, "ps1_genus_melted.csv")
 ```
 
-```{r Genus level assignation}
-# Filtrar el dataframe de fungal_traits para que solo incluya los géneros presentes en asv_postclustering
-FT_genus <- fungal_traits %>%
-  filter(Genus %in% clustered_taxa$Genus)
+```{r % of matching}
+# Matching Genus level
+asvs_with_traits <- ps1_genus_melted %>%
+  dplyr::filter(!is.na(Genus_clean)) %>%
+  dplyr::filter(Genus_clean %in% unique(fungal_traits$Genus))
 
-# Ver las primeras filas del resultado
-head(FT_genus)
+# Number of unique ASVs matching
+n_matching_asvs <- n_distinct(asvs_with_traits$OTU)
+n_total_asvs <- n_distinct(ps1_genus_melted$OTU)
+
+cat("Number of ASVs matching with FungalTraits:", n_matching_asvs, "\n")
+cat("Number of total ASVs:", n_total_asvs, "\n")
+
+# 42.2% of taxonomic assignment by Genus
+
+###reads/abundance####
+# Total abundance (reads) matching
+matching_reads <- sum(asvs_with_traits$Abundance, na.rm = TRUE)
+
+# Total reads in dataset
+total_reads <- sum(ps1_genus_melted$Abundance, na.rm = TRUE)
+
+# Print results
+cat("Total reads matching with FungalTraits:", matching_reads, "\n")
+cat("Total reads in dataset:", total_reads, "\n")
+cat("Percentage of matching reads:", matching_reads / total_reads * 100, "%\n") #This means that the 42% of ASVs matched with the fungal traits database actually represents 80% of the most abundant ASVs (fungal traits does not have info for our less abundant ASV, which is ok)
 ```
 
-**FunGUILD**
+```{r Collapse the fungal traits database}
+#We want to have a unique row for each Genus. In order to achieve this, we calculate the most frequent value (the mode) for each Genus in terms of each variable:
+moda <- function(x) {
+  ux <- na.omit(unique(x))
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# Group by Genus: 
+fungal_traits_mode <- fungal_traits %>%
+  dplyr::group_by(Genus) %>%
+  dplyr::summarise(across(everything(), moda), .groups = "drop")
+#write.csv(fungal_traits_mode, "fungal_traits_collapsed_moda.csv")
+```
+
+```{r Merging databases}
+ps1melted_traits <- left_join(ps1_genus_melted, fungal_traits_mode, 
+                              by = c("Genus_clean" = "Genus")) #Genus level assignation
+
+# Evaluation of the confidence level
+asvs_by_confidence <- ps1melted_traits %>%
+  dplyr::group_by(confidence_fg) %>%
+  dplyr::summarise(n_ASVs = n_distinct(OTU),
+                   .groups = "drop") %>%
+  dplyr::mutate(total_ASVs = n_total_asvs,
+                perc_ASVs = round((n_ASVs / total_ASVs) * 100, 1)
+  )
+```
+
+```{r Paleta Neón}
+n_colors <- length(unique(ps1melted_traits_clean$guild_fg))
+neon_palette <- createPalette(n_colors, seedcolors = c("#FF00FF","#39FF14", "#FF6EC7", "#00FFFF","#FFFF00"), range = c(40, 100))
+
+
+# Asignar nombres si quieres reproducibilidad
+names(neon_palette) <- unique(ps1melted_traits_clean$guild_fg)
+```
+
+```{r Visualization: Trophic mode}
+ps1melted_traits_clean <- ps1melted_traits %>%
+  filter(!is.na(growth_form_fg)) #Keep only entries with values in the column 'guild_fg'
+
+ps1melted_traits_clean$DEPTH <- factor(ps1melted_traits_clean$DEPTH, levels = c("topsoil", "subsoil"))
+
+ps1melted_traits_clean %>%
+  dplyr::group_by(Sample, guild_fg, TRAT2, DEPTH) %>%
+  dplyr::summarise(RelAbun = sum(Abundance)/n(), .groups = "drop") %>%
+  ggplot(aes(x = guild_fg, y = RelAbun, fill = guild_fg)) +
+  geom_boxplot(width = 0.6, outlier.size = 0.8, alpha = 0.8) +
+  #scale_y_log10() + #Log-transform the TotalAbundance for better visualization
+  scale_fill_manual(values = neon_palette) +  
+  facet_grid(DEPTH ~ TRAT2, scales = "free_y") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),  # quitar etiquetas del eje x
+    axis.ticks.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text = element_text(size = 12),
+    legend.position = "bottom",  
+    legend.title = element_blank()
+  ) +
+  labs(x = NULL, y = "Relative Abundance")
+#ggsave("FungalTraits_TrophicRelAbun.png")
+```
 
 ```{r}
-devtools::install_github("brendanf/FUNGuildR", force =TRUE)
+# 1. Calcular abundancia total por forma funcional
+top4_forms <- ps1melted_traits_clean %>%
+  dplyr::group_by(guild_fg) %>%
+  dplyr::summarise(TotalAbun = sum(Abundance, na.rm = TRUE)) %>%
+  arrange(desc(TotalAbun)) %>%
+  slice_head(n =5) %>%
+  pull(guild_fg)
+
+# 2. Filtrar para quedarte solo con las 4 más abundantes
+ps1melted_traits_clean %>%
+  dplyr::filter(guild_fg %in% top4_forms) %>%
+  dplyr::group_by(Sample, guild_fg, TRAT2, DEPTH) %>%
+  dplyr::summarise(RelAbun = sum(Abundance) / n(), .groups = "drop") %>%
+  ggplot(aes(x = guild_fg, y = RelAbun, fill = guild_fg)) +
+  geom_boxplot(width = 0.6, outlier.size = 0.8, alpha = 0.8) +
+  scale_fill_manual(values = neon_palette[names(neon_palette) %in% top4_forms]) +
+  facet_grid(DEPTH ~ TRAT2, scales = "free_y") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.ticks.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text = element_text(size = 12),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  labs(x = NULL, y = "Relative Abundance")
+ggsave("poster_congreso.png")
 ```
 
-```{r}
-clustered_taxa <- as.data.frame(clustered_taxa)
+```{r Visualization: Symbiotrophs}
+ps1melted_traits_clean <- ps1melted_traits %>%
+  filter(!is.na(trophic_mode_fg == "Pathotroph-Symbiotroph"))
 
-clean_taxonomy <- as.data.frame(clustered_taxa) %>%
-  mutate(Kingdom = gsub("^k__", "", Kingdom),
-         Phylum = gsub("^p__", "", Phylum),
-         Class = gsub("^c__", "", Class),
-         Order = gsub("^o__", "", Order),
-         Family = gsub("^f__", "", Family),
-         Genus = gsub("^g__", "", Genus),
-         Species = gsub("^s__", "", Species),
-         Taxonomy = paste(Kingdom, Phylum, Class, Order, Family, Genus, Species, sep = ";"))
-
-
-FG <- FUNGuildR::funguild_assign(clean_taxonomy)
+ps1melted_traits_clean %>%
+  dplyr::filter(trophic_mode_fg == "Pathotroph-Symbiotroph") %>%
+  dplyr::group_by(Sample, growth_form_fg, TRAT2, DEPTH) %>%
+  dplyr::summarise(TotalAbund = sum(Abundance), .groups = "drop") %>%
+  ggplot(aes(x = growth_form_fg, y = TotalAbund, fill = growth_form_fg)) +
+  geom_boxplot(width = 0.6, outlier.size = 0.8, alpha = 0.8) +
+  scale_y_log10()+
+  scale_fill_brewer(palette = "Set2") +
+  facet_grid(DEPTH ~ TRAT2) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text = element_text(size = 12),
+    #legend.position = "none"
+  ) +
+  labs(x = NULL, y = "Total abundance of symbiotrophs")
+#ggsave("FungalTraits_SymbioForm.png")
 ```
 
-```{r}
-guild_counts <- FG %>%
-  dplyr::count(guild, name = "Count") 
+```{r Trophic summary}
+trophic_summary <- ps1melted_traits %>%
+  dplyr::group_by(guild_fg) %>%
+  dplyr::summarise(total_abundance = sum(Abundance))
 
-top_guilds <- guild_counts %>%
-  top_n(15, Count)
+# Calculate percentage
+trophic_summary <- trophic_summary %>%
+  dplyr::mutate(percent = 100 * total_abundance / sum(total_abundance))
 
-ggplot(top_guilds, aes(x = reorder(guild, -Count), y = Count, fill = guild)) +
-  geom_bar(stat = "identity") +
-  theme_minimal() +
-  labs(x = "Fungal Guild", y = "Number of Taxa", title = "Top 15 Most Frequent Fungal Guilds") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate labels for readability
-  theme(legend.position = "none") +
-  scale_fill_viridis_d()
-#ggsave("funguild.png")
+ps1melted_traits %>%
+  dplyr::group_by(TRAT2, guild_fg) %>%
+  dplyr::summarise(Abundance = sum(Abundance), .groups = "drop") %>%
+  dplyr::group_by(TRAT2) %>%
+  dplyr::mutate(Total = sum(Abundance),
+         Percent = 100 * Abundance / Total)
+
 ```
+
+
+```{r Visualization: Pathotrophs}
+ps1melted_traits_clean %>%
+  dplyr::filter(trophic_mode_fg == "Pathotroph") %>%
+  dplyr::group_by(Sample, growth_form_fg, TRAT2, DEPTH) %>%
+  dplyr::summarise(TotalAbund = sum(Abundance), .groups = "drop") %>%
+  ggplot(aes(x = growth_form_fg, y = TotalAbund, fill = growth_form_fg)) +
+  geom_boxplot(width = 0.6, outlier.size = 0.8, alpha = 0.8) +
+  #scale_y_log10() +
+  scale_fill_brewer(palette = "Set2") +
+  facet_grid(DEPTH ~ TRAT2) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text = element_text(size = 12),
+    #legend.position = "none"
+  ) +
+  labs(x = NULL, y = "Total abundance of symbiotrophs")
+#ggsave("FungalTraits_PathoForm.png")
+```
+
 
