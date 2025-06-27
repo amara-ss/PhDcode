@@ -15,7 +15,7 @@ output:
 
 ```{r Packages}
 #install.packages("pacman")
-pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car", "plyr", "ggpubr", "ggsignif", "ape", "cooccur", "igraph", "reshape2", "cowplot")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car", "plyr", "ggpubr", "ggsignif", "ape", "cooccur", "igraph", "reshape2", "cowplot", "patchwork")
 ```
 
 ```{r Packages: BiocManager}
@@ -114,11 +114,66 @@ ps <- phyloseq::phyloseq(otu_table(clustered_asv_table, taxa_are_rows=TRUE),
 ps
 ```
 
+```{r Quality analysis}
+# Define prevalence of each taxa (in how many samples did each taxa appear at least once)
+# Compute prevalence (number of samples where an OTU is present)
+prevdf <- apply(X = otu_table(ps),
+                MARGIN = ifelse(taxa_are_rows(ps), yes = 1, no = 2),
+                FUN = function(x) sum(x > 0))
+
+prevdf <- data.frame(Prevalence = prevdf, row.names = taxa_names(ps))
+
+# Add total abundance and taxonomy information
+prevdf <- data.frame(Prevalence = prevdf$Prevalence,
+                     TotalAbundance = phyloseq::taxa_sums(ps),
+                     as.data.frame(tax_table(ps)))
+
+#With the following table we can see how well represented is each "Phylum" (or Kingdom, etc...)
+dfprev <- plyr::ddply(prevdf, "Kingdom", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
+```
+
+```{r Visualization}
+# Define prevalence threshold as 5% of total samples 
+prevalenceThreshold = 0.05 * phyloseq::nsamples(ps1)
+prevalenceThreshold
+
+#This plot will help us to identify which taxa are more abundant and prevalent in the dataset.
+ggplot(prevdf, aes(TotalAbundance, Prevalence, color = Phylum)) + 
+  geom_hline(yintercept = prevalenceThreshold, alpha = 0.5, linetype = 2) + 
+  geom_point(size = 2, alpha = 0.7) + 
+  scale_y_log10() + 
+  scale_x_log10() + 
+  xlab("Total Abundance") + 
+  facet_wrap(~Phylum) +
+  theme(legend.position = "none")
+#ggsave("prevalence.png")
+
+#This will show us the distribution of read counts per sample:
+sample_sum_df <- data.frame(sum = sample_sums(ps1))
+ggplot(sample_sum_df, aes(x = sum)) + 
+  geom_histogram(color = "black", fill = "grey", binwidth = 2500) +
+  ggtitle("Distribution of sample sequencing depth") + 
+  xlab("Read counts") +
+  theme(axis.title.y = element_blank()) 
+```
+
 ```{r ps0}
 # We make sure that we do not have OTUs that are not present in any of the samples:
 ps0 <- phyloseq::prune_taxa(phyloseq::taxa_sums(ps) > 0, ps)
 ps0
 #We also did a filtering of ASV with less than 5 reads but the result is the same (probably due to LULU & postclustering)
+```
+
+```{r Filtering: unwanted taxa}
+#Based on the results above, we could decide to filter some Phylum out (the ones with less representation). We can also get rid of the Kingdoms not corresponding to fungi:
+#plot_bar(ps, fill = "Kingdom") + 
+#geom_bar(aes(color=Kingdom, fill=Kingdom), stat="identity", position="stack")
+
+ps1 = phyloseq::subset_taxa(ps, Kingdom=="k__Fungi")
+ps1
+
+#plot_bar(ps1, fill = "Kingdom") + 
+#geom_bar(aes(color=Kingdom, fill=Kingdom), stat="identity", position="stack")
 ```
 
 *ADVICE*: check some sequences (from the 'asv_OTU.fasta' generated in DADA2, they can be accessed through Notepad++) in BLAST: https://blast.ncbi.nlm.nih.gov/Blast.cgi# --> copy and paste the whole sequence in the Entry query sequence box, and click on 'BLAST' at the end. This is a double check to see if our reference database (UNITE in this case) has assigned correctly the taxons.
@@ -128,7 +183,7 @@ ps0
 # Chao1: non-parametric estimator of the minimum species richness. The number of species in a community, accounting for the number of rare species that are likely to be missed
 # Shannon: It measures the diversity of a community by considering both species richness and evenness. Higher values indicate greater diversity, with more even distribution of species abundances.
 
-alpha_fungi <- microbiome::alpha(ps, index = c("Observed", "Shannon", "Chao1"))
+alpha_fungi <- microbiome::alpha(ps1, index = c("Observed", "Shannon", "Chao1")) #ps1: only for Fungi Kingdom
 
 alpha_fungi <- alpha_fungi %>% 
   tibble::rownames_to_column(var = "SampleID")
@@ -144,7 +199,7 @@ alpha_fungi$TRAT2 <- ordered(alpha_fungi$TRAT2, levels=c("UB", "LS", "HS1", "HS2
 alpha_fungi$DEPTH <- ordered(alpha_fungi$DEPTH, levels=c("topsoil", "subsoil"))
 
 ### Visually assessment of data
-var <- alpha_fungi$observed
+var <- alpha_fungi$chao1
 
 hist(var) 
 
@@ -187,28 +242,30 @@ multcomp::cld(emmeans(mixed.var, ~TRAT2, type="response"), Letters= letters) #Tu
 -No significant differences in *Shannon diversity* across treatments
 -Significant differences found in *Observed and Chao1 richness*: 
   --> ps Observed and Chao1 richness (no sig. differences across DEPTHs; across treatmentsUB, UB > LS > HS1 > HS2)
-  --> ps1 (k__Fungi): Observed and Chao1 richness (no sig. differences across DEPTHs; across treatmentsUB, LS > HS1, HS2)
+  --> ps1 (k__Fungi): Observed and Chao1 richness (no sig. differences across DEPTHs; across treatments UB, LS > HS1, HS2)
 
 ```{r Alpha Diversity Plot}
-# Specify the desired order of levels for TRAT2
-TRAT2_order <- c("UB", "LS", "HS1", "HS2")  
-# Reorder the levels of TRAT2
-sample_data(ps1)$TRAT2 <- factor(sample_data(ps1)$TRAT2, levels = TRAT2_order)
+# Reorder the levels of TRAT2 and DEPTH
+sample_data(ps1)$TRAT2 <- factor(sample_data(ps1)$TRAT2, levels = c("UB", "LS", "HS1", "HS2") )
+sample_data(ps1)$DEPTH <- factor(sample_data(ps1)$DEPTH, levels = c("topsoil","subsoil"))
 
-plot_richness(ps1, color = "TRAT2", x = "TRAT2", 
-              measures = c("Observed")) + 
-  geom_boxplot(aes(fill = TRAT2), alpha=.7) + 
+plot_richness(ps1, color = "TRAT2", shape ="DEPTH", x = "TRAT2", 
+              measures = c("Observed", "Chao1","Shannon")) + 
+  geom_boxplot(aes(fill = TRAT2), alpha=.2, outlier.shape = NA) + 
+  geom_jitter(width = 0.2, size = 1.5) +  # <- los puntos individuales
   scale_color_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) + 
   scale_fill_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) +
+  #facet_grid(variable ~ DEPTH, scales="free") +
   theme(
     panel.grid = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
     panel.grid.minor = element_blank(),
     axis.line = element_line(),
     strip.background = element_blank(),  # Remove strip background
     axis.text.x = element_text(angle = 0.1, hjust = 1),  # Rotate x-axis labels
     panel.background = element_blank(),  # Remove panel background color
     plot.background = element_blank(),   # Remove plot background color
-    legend.position = "none"             # Remove legend
+    #legend.position = "none" # Remove legend
   )
 #ggsave("alpha_div_k_fungi.png")
 
@@ -230,61 +287,6 @@ ggplot(alpha_fungi, aes(x=TRAT2, y = observed, alpha=.6, color=TRAT2))+
   )+
   facet_grid(~DEPTH)
 #ggsave("observed_div_k_fungi.png")
-```
-
-```{r Quality analysis}
-# Define prevalence of each taxa (in how many samples did each taxa appear at least once)
-# Compute prevalence (number of samples where an OTU is present)
-prevdf <- apply(X = otu_table(ps),
-                MARGIN = ifelse(taxa_are_rows(ps), yes = 1, no = 2),
-                FUN = function(x) sum(x > 0))
-
-prevdf <- data.frame(Prevalence = prevdf, row.names = taxa_names(ps))
-
-# Add total abundance and taxonomy information
-prevdf <- data.frame(Prevalence = prevdf$Prevalence,
-                     TotalAbundance = phyloseq::taxa_sums(ps),
-                     as.data.frame(tax_table(ps)))
-
-#With the following table we can see how well represented is each "Phylum" (or Kingdom, etc...)
-dfprev <- plyr::ddply(prevdf, "Kingdom", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
-```
-
-```{r Filtering: unwanted taxa}
-#Based on the results above, we could decide to filter some Phylum out (the ones with less representation). We can also get rid of the Kingdoms not corresponding to fungi:
-#plot_bar(ps, fill = "Kingdom") + 
-#geom_bar(aes(color=Kingdom, fill=Kingdom), stat="identity", position="stack")
-
-ps1 = phyloseq::subset_taxa(ps, Kingdom=="k__Fungi")
-ps1
-
-#plot_bar(ps1, fill = "Kingdom") + 
-#geom_bar(aes(color=Kingdom, fill=Kingdom), stat="identity", position="stack")
-```
-
-```{r Visualization}
-# Define prevalence threshold as 5% of total samples 
-prevalenceThreshold = 0.05 * phyloseq::nsamples(ps1)
-prevalenceThreshold
-
-#This plot will help us to identify which taxa are more abundant and prevalent in the dataset.
-ggplot(prevdf, aes(TotalAbundance, Prevalence, color = Phylum)) + 
-  geom_hline(yintercept = prevalenceThreshold, alpha = 0.5, linetype = 2) + 
-  geom_point(size = 2, alpha = 0.7) + 
-  scale_y_log10() + 
-  scale_x_log10() + 
-  xlab("Total Abundance") + 
-  facet_wrap(~Phylum) +
-  theme(legend.position = "none")
-#ggsave("prevalence.png")
-
-#This will show us the distribution of read counts per sample:
-sample_sum_df <- data.frame(sum = sample_sums(ps1))
-ggplot(sample_sum_df, aes(x = sum)) + 
-  geom_histogram(color = "black", fill = "grey", binwidth = 2500) +
-  ggtitle("Distribution of sample sequencing depth") + 
-  xlab("Read counts") +
-  theme(axis.title.y = element_blank()) 
 ```
 
 ```{r Agglomerate by taxonomic ranks}
@@ -606,135 +608,188 @@ p
 #ggsave("ordination_methods_ps1.png", plot = p, width = 12, height = 10, dpi = 300, bg = "white")
 ```
 
-*NMDS (Non-Metric Multidimensional Scaling)*
--A non-linear non-metric ordination technique.
--Ranks distances rather than preserving actual values.
--Only assumes that rank order of distances is meaningful.
--Axes are arbitrary and do not have intrinsic meaning.
--The distance between points is only relative (ordinal).
-Best use case: When working with non-Euclidean distances (e.g., Bray-Curtis) and non-normal ecological data.
+*PCoA (Principal Coordinate Analysis)*
+- A linear metric ordination technique.
+- Distance preservation: Attempts to preserve actual distances (Euclidean-like) as much as possible.
+-Assumes that the dissimilarity metric is a good approximation of true distances.
+-The axes are ordered based on the amount of variation they explain.
+-The distance between points is quantitative and can be directly interpreted.
+-Best use case: When you assume a linear relationship between distances and the underlying data structure.
 🟢 Advantages:
-More robust for ecological data with non-linear patterns.
-Works well with Bray-Curtis and other ecological dissimilarity metrics.
+Provides a direct visualization of group differences.
+The percentage of variance explained by each axis is meaningful.
 🔴 Disadvantages:
-Cannot directly compare axes across different NMDS runs.
-Stress values must be interpreted to determine fit (stress < 0.2 is acceptable, < 0.1 is ideal).
+Can be influenced by highly skewed data or non-Euclidean relationships.
+Assumes a Euclidean-like structure, which is not always valid for ecological data.
 
-- We can use the vegdist function to calculate our distance matrix if we need it for further analysis, but the *metaMDS function* will automatically calculate the distance matrix based on the type of distance we choose.
+```{r Principal Coordinate Analysis (PCoA)}
+bray_dist <- phyloseq::distance(ps_hel, method="bray")
+# Perform PCoA
+pcoa_result <- cmdscale(bray_dist, k = 2)  # k = dimensions
+# Create a data frame for the PCoA results
+pcoa_df <- data.frame(PCoA1 = pcoa_result[, 1],
+                      PCoA2 = pcoa_result[, 2],
+                      Sample = rownames(pcoa_result))
+ps_hel_meta_data <- ps_hel_meta_data %>%
+  mutate(Sample = rownames(ps_hel_meta_data))
 
-```{r NMDS}
-OTU.ord <- ordinate(ps_hel, "NMDS", "bray")
+# Merge with metadata
+pcoa_df <- merge(pcoa_df, ps_hel_meta_data, by = "Sample")
 
-ps_hel_meta_data <- data.frame(sample_data(ps_hel))  # Get the metadata from the ps object
-
-ps_hel_meta_data <- ps_hel_meta_data %>% 
-  mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
-         Ergosterol_µg_g = Ergosterol_ng_g_105/1000,
-         C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
-
-plot_vars <- c("Slope_per","Organic_layer_mean_depth_cm", "Charred_organic_layer_mean_cm", "Green_per", "Brown_per", "Consumed_per", "Grass_per", "Old_litter_per", "New_litter_per", "Mineral_per", "Ash_per", "Stone_per")
-
-env_df <- ps_hel_meta_data %>%
-  dplyr::select(all_of(plot_vars))
-
-chem_vars <- c("pH", "EC", "densidad_revisada_25", "C_N_ratio",
-              "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", 
-              "NH4_mgL_105","NO3_mgL_105", "Ergosterol_µg_g", 
-              "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
-              "Nitrogen_stock_Mg_ha", "SOM_per_corregido", "MBC_mg_kg_105",
-              "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
-              "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")
-
+#Add envfit
 env2_df <- ps_hel_meta_data %>%
   dplyr::select(all_of(chem_vars))
 
-envfit_results  <- vegan::envfit(OTU.ord, env2_df, permutations = 999, na.rm = TRUE)
+envfit_results  <- vegan::envfit(pcoa_result, env2_df, permutations = 999, na.rm = TRUE)
 
-env_coord_sig0 <- scores(envfit_results, "vectors")[envfit_results$vectors$pvals < 0.01, ] #Only the significant variables
+arrows_df <- as.data.frame(scores(envfit_results, display = "vectors"))
+arrows_df$Variable <- rownames(arrows_df)
+mult <- 1.5  # para ajustar la longitud de las flechas al gráfico
+arrows_df <- arrows_df %>%
+  dplyr::mutate(PCoA1 = Dim1 * mult,
+                PCoA2 = Dim2 * mult)
 
-# Plot the ordination and add the environmental vectors
-plot_ordination(ps_hel, OTU.ord, color = "TRAT2") +
-  geom_point(size = 4) +  # Adjust point size
-  geom_polygon(alpha = 0.2) +
-  scale_fill_manual(values = cols) + 
-  scale_colour_manual(values = cols) +
-  geom_segment(data = as.data.frame(env_coord_sig0), 
-               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
-               arrow = arrow(type = "open", length = unit(0.2, "inches")), 
-               size = 1, color = "blue") +
-  geom_text(data = as.data.frame(env_coord_sig0), 
-            aes(x = NMDS1, y = NMDS2, label = rownames(env_coord_sig0)),
-            size = 3, color = "blue") +
-  theme_minimal()
-#ggsave("nmds_hel.png")
+# Plot PCoA
+pcoa_df %>%
+  ggplot(aes(x = PCoA1, y = PCoA2, color = TRAT2, shape = DEPTH)) +
+  geom_point(size = 4) +
+  geom_segment(data = arrows_df,
+               aes(x = 0, y = 0, xend = PCoA1, yend = PCoA2),
+               arrow = arrow(length = unit(0.3, "cm")),
+               color = "black",
+               inherit.aes = FALSE) +  
+  geom_text(data = arrows_df,
+            aes(x = PCoA1, y = PCoA2, label = Variable),
+            size = 4, hjust = 0.5, vjust = -0.7,
+            inherit.aes = FALSE) +   
+  scale_color_manual(values = cols) +
+  theme_minimal() +
+  labs(x = "PCoA 1", y = "PCoA 2") +
+  theme(legend.position = "none")
+#ggsave("PCoA.png")
 
-#####TOPSOIL
-ps_hel_topsoil <- subset_samples(ps_hel, DEPTH == "topsoil")
+####TOPSOIL
+bray_dist_top <- phyloseq::distance(ps_hel_topsoil, method="bray")
+# Perform PCoA
+pcoa_top <- cmdscale(bray_dist_top, k = 2)  # k = dimensions
+# Create a data frame for the PCoA results
+pcoa_top_df <- data.frame(PCoA1 = pcoa_top[, 1],
+                      PCoA2 = pcoa_top[, 2],
+                      Sample = rownames(pcoa_top))
+meta_data_top <- meta_data_top %>%
+  mutate(Sample = rownames(meta_data_top))
 
-# Perform ordination for topsoil samples
-OTU.ord_topsoil <- ordinate(ps_hel_topsoil, method = "NMDS", distance = "bray")
+# Merge with metadata
+pcoa_top_df <- merge(pcoa_top_df, meta_data_top, by = "Sample")
 
-#Add environmental data
-env_df_TOP <- ps_hel_meta_data %>%
-  filter(DEPTH == "topsoil") %>%
-  dplyr::select(all_of(chem_vars))
+# Add envfit:
+env2_TOP <- ps_hel_meta_data %>%
+  filter(DEPTH =="topsoil") %>%
+  dplyr::select(all_of(chem_vars)) 
 
-envfit_TOP  <- vegan::envfit(OTU.ord_topsoil, env_df_TOP, permutations = 999, na.rm = TRUE)
+# Run envfit using the distance matrix and the environmental variables
+envfit_top <- vegan::envfit(pcoa_top, env2_TOP, permutations = 999)
 
-envfit_TOP_sig <- scores(envfit_TOP, "vectors")[envfit_TOP$vectors$pvals < 0.01, ] #Only the significant variables
+arrows_df <- as.data.frame(scores(envfit_top, display = "vectors")[envfit_top$vectors$pvals < 0.01, ])
+arrows_df$Variable <- rownames(arrows_df)
+mult <- 1.5  # para ajustar la longitud de las flechas al gráfico
+arrows_df <- arrows_df %>%
+  dplyr::mutate(PCoA1 = Dim1 * mult,
+                PCoA2 = Dim2 * mult)
 
-# Plot the ordination and add the environmental vectors
-plot_ordination(ps_hel, OTU.ord_topsoil, color = "TRAT2") +
-  geom_point(size = 4) +  # Adjust point size
-  geom_polygon(alpha = 0.1) +
-  scale_fill_manual(values = cols) + 
-  scale_colour_manual(values = cols) +
-  geom_segment(data = as.data.frame(envfit_TOP_sig), 
-               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
-               arrow = arrow(type = "open", length=unit(0.06, "npc")), 
-               size = 1, color = "#737373") +
-  geom_text(data = as.data.frame(envfit_TOP_sig), 
-            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_TOP_sig)),
-            size = 3, color = "#737373") +
-  scale_x_reverse()+
-    theme(
+# Plot PCoA
+pcoa_top_df %>%
+  ggplot(aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
+  geom_segment(data = arrows_df,
+               aes(x = 0, y = 0, xend = PCoA1, yend = PCoA2), # xend and yend *0.5 to reduce arrow lenght
+               arrow = arrow(length = unit(0.2, "cm")),
+               size =1, color = "grey",
+               inherit.aes = FALSE) +  
+  geom_text(data = arrows_df,
+            aes(x = PCoA1, y = PCoA2, label = Variable),
+            size = 4, hjust = 0.5, vjust = -0.7,
+            inherit.aes = FALSE) +  
+  geom_point(size = 5, alpha=.6) +
+  scale_color_manual(values = cols) +
+  theme_minimal() +
+  labs(x = "PCoA 1", y = "PCoA 2") +
+  theme(
     panel.background = element_blank(),
     panel.border = element_rect(colour = "black", fill = NA),
     panel.grid = element_blank(),
     axis.text.x = element_text(size = 14),  # Change this value as needed
     axis.text.y = element_text(size = 14),
-    legend.position = "none"
-  )
-#ggsave("nmdsTOP_chem.png")
+    legend.position = "none") +
+  scale_x_reverse()
+#ggsave("PCoA_top.png")
 
-#####SUBSOIL
-ps_hel_subsoil <- subset_samples(ps_hel, DEPTH == "subsoil")
+####SUBSOIL
+bray_dist_sub <- phyloseq::distance(ps_hel_subsoil, method="bray")
+# Perform PCoA
+pcoa_sub <- cmdscale(bray_dist_sub, k = 2)  # k = dimensions
+# Create a data frame for the PCoA results
+pcoa_sub_df <- data.frame(PCoA1 = pcoa_sub[, 1],
+                      PCoA2 = pcoa_sub[, 2],
+                      Sample = rownames(pcoa_sub))
+meta_data_sub <- meta_data_sub %>%
+  mutate(Sample = rownames(meta_data_sub))
 
-# Perform ordination for subsoil samples
-OTU.ord_subsoil <- ordinate(ps_hel_subsoil, method = "NMDS", distance = "bray")
+# Merge with metadata
+pcoa_sub_df <- merge(pcoa_sub_df, meta_data_sub, by = "Sample")
 
-env_df_SUB <- ps_hel_meta_data %>%
-  filter(DEPTH == "subsoil") %>%
-  dplyr::select(all_of(chem_vars))
+# Add envfit:
+env2_SUB <- ps_hel_meta_data %>%
+  filter(DEPTH =="subsoil") %>%
+  dplyr::select(all_of(chem_vars)) 
 
-envfit_SUB  <- vegan::envfit(OTU.ord_subsoil, env_df_SUB, permutations = 999, na.rm = TRUE)
+# Run envfit using the distance matrix and the environmental variables
+envfit_sub <- vegan::envfit(pcoa_sub, env2_SUB, permutations = 999)
 
-envfit_SUB_sig <- scores(envfit_SUB, "vectors")[envfit_SUB$vectors$pvals < 0.01, ] #Only the significant variables
+arrows_df <- as.data.frame(scores(envfit_sub, display = "vectors")[envfit_top$vectors$pvals < 0.01, ])
+arrows_df$Variable <- rownames(arrows_df)
+mult <- 1.5  # para ajustar la longitud de las flechas al gráfico
+arrows_df <- arrows_df %>%
+  dplyr::mutate(PCoA1 = Dim1 * mult,
+                PCoA2 = Dim2 * mult)
 
-# Plot the ordination and add the environmental vectors
-plot_ordination(ps_hel, OTU.ord_subsoil, color = "TRAT2") +
-  geom_point(size = 4) +  # Adjust point size
-  geom_polygon(alpha = 0.2) +
-  scale_fill_manual(values = cols) + 
-  scale_colour_manual(values = cols) +
-  geom_segment(data = as.data.frame(envfit_SUB_sig), 
-               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
-               arrow = arrow(type = "open", length = unit(0.06, "inches")), 
-              size = 1, color = "#737373") +
-  geom_text(data = as.data.frame(envfit_SUB_sig), 
-            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_SUB_sig)),
-            size = 3, color = "#737373") +
-  #scale_x_reverse()+
+# Plot PCoA
+pcoa_sub_df %>%
+  ggplot(aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
+  geom_segment(data = arrows_df,
+               aes(x = 0, y = 0, xend = PCoA1, yend = PCoA2), # xend and yend *0.5 to reduce arrow lenght
+               arrow = arrow(length = unit(0.2, "cm")),
+               size =1, color = "grey",
+               inherit.aes = FALSE) +  
+  geom_text(data = arrows_df,
+            aes(x = PCoA1, y = PCoA2, label = Variable),
+            size = 4, hjust = 0.5, vjust = -0.7,
+            inherit.aes = FALSE) +  
+  geom_point(size = 5, alpha=.6) +
+  scale_color_manual(values = cols) +
+  theme_minimal() +
+  labs(x = "PCoA 1", y = "PCoA 2") +
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 14),  # Change this value as needed
+    axis.text.y = element_text(size = 14),
+    legend.position = "none") +
+  scale_x_reverse()
+#ggsave("PCoA_sub.png")
+```
+
+```{r PCoA as linear predictor}
+#TOPSOIL
+lm_pcoa_top <- lm(PCoA1 ~ TRAT2, data = pcoa_top_df)
+summary(lm_pcoa_top)
+
+ggplot(pcoa_top_df, aes(x = TRAT2, y = PCoA1, color=TRAT2, fill = TRAT2)) +
+  geom_boxplot(alpha = 0.3) +
+  geom_jitter(width = 0.1, aes(color = TRAT2)) +
+  scale_fill_manual(values = cols) +
+  scale_color_manual(values = cols) +
+  theme_minimal()+
   theme(
     panel.background = element_blank(),
     panel.border = element_rect(colour = "black", fill = NA),
@@ -743,27 +798,150 @@ plot_ordination(ps_hel, OTU.ord_subsoil, color = "TRAT2") +
     axis.text.y = element_text(size = 14),
     legend.position = "none"
   )
-#ggsave("nmdsSUB_chem.png")
+#ggsave("lm_pcoa_top.png")
+
+anova(lm(PCoA1 ~ TRAT2, data = pcoa_top_df))
+Tuckeys <- TukeyHSD(aov(PCoA1 ~ TRAT2, data = pcoa_top_df))
+cld <- multcompLetters4(lm_pcoa_top, Tuckeys)
+print(cld)
+
+#SUBSOIL
+lm_pcoa_sub <- lm(PCoA1 ~ TRAT2, data = pcoa_sub_df)
+summary(lm_pcoa_sub)
+
+ggplot(lm_pcoa_sub, aes(x = TRAT2, y = PCoA1, color=TRAT2, fill = TRAT2)) +
+  geom_boxplot(alpha = 0.3) +
+  geom_jitter(width = 0.1, aes(color = TRAT2)) +
+  scale_fill_manual(values = cols) +
+  scale_color_manual(values = cols) +
+  theme_minimal()+
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 14),  # Change this value as needed
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"
+  )
+#ggsave("lm_pcoa_sub.png")
+
+anova(lm(PCoA1 ~ TRAT2, data = pcoa_sub_df))
+Tuckeys <- TukeyHSD(aov(PCoA1 ~ TRAT2, data = pcoa_sub_df))
+cld <- multcompLetters4(lm_pcoa_sub, Tuckeys)
+print(cld)
+```
+
+```{r Combined plots for PCoA}
+# PCoA SUBSOIL
+p3 <- pcoa_top_df %>%
+  ggplot(aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
+  geom_segment(data = arrows_df,
+               aes(x = 0, y = 0, xend = PCoA1*0.5, yend = PCoA2*0.5),
+               arrow = arrow(length = unit(0.2, "cm")),
+               size = 1, color = "grey",
+               inherit.aes = FALSE) +
+  geom_point(size = 5, alpha = .6) +
+  scale_color_manual(values = cols) +
+  theme_minimal() +
+  labs(x = "PCoA 1", y = "PCoA 2") +
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"
+  ) +
+  scale_x_reverse()
+
+# Boxplot
+p4 <- ggplot(lm_pcoa_top, aes(x = TRAT2, y = PCoA1, color = TRAT2, fill = TRAT2)) +
+  geom_boxplot(alpha = 0.2) +
+  geom_jitter(width = 0.1, size = 2) +
+  scale_fill_manual(values = cols) +
+  scale_color_manual(values = cols) +
+  theme_minimal() +
+  labs(x = "Treatment", y = "PCoA 1") +
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"
+  )
+combined_plot <- p3 + p4 + plot_layout(ncol = 2, widths = c(2, 1))
+combined_plot
+#ggsave("combined_topsoil.png")
+
+# PCoA SUBSOIL
+p1 <- pcoa_sub_df %>%
+  ggplot(aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
+  geom_segment(data = arrows_df,
+               aes(x = 0, y = 0, xend = PCoA1*0.5, yend = PCoA2*0.5),
+               arrow = arrow(length = unit(0.2, "cm")),
+               size = 1, color = "grey",
+               inherit.aes = FALSE) +
+  geom_point(size = 5, alpha = .6) +
+  scale_color_manual(values = cols) +
+  theme_minimal() +
+  labs(x = "PCoA 1", y = "PCoA 2") +
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"
+  ) +
+  scale_x_reverse()
+
+# Boxplot
+p2 <- ggplot(lm_pcoa_sub, aes(x = TRAT2, y = PCoA1, color = TRAT2, fill = TRAT2)) +
+  geom_boxplot(alpha = 0.2) +
+  geom_jitter(width = 0.1, size = 2) +
+  scale_fill_manual(values = cols) +
+  scale_color_manual(values = cols) +
+  theme_minimal() +
+  labs(x = "Treatment", y = "PCoA 1") +
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"
+  )
+combined_plot <- p1 + p2 + plot_layout(ncol = 2, widths = c(2, 1))
+combined_plot
+#ggsave("combined_subsoil.png")
 ```
 
 ```{r PERMANOVA}
-permanova <- vegan::adonis2(phyloseq::distance(ps_hel, method="bray") ~ TRAT2*DEPTH,
-             permutations = 999, data = ps_hel_meta_data)
+
+permanova <- vegan::adonis2(bray_dist ~ TRAT2 * DEPTH, permutations = 999, data = ps_hel_meta_data)
 permanova
+# Check dispersion
+disp <- betadisper(bray_dist, ps_hel_meta_data$TRAT2)
+anova(disp)
 
 ####TOPSOIL
-meta_data_top <- ps_hel_meta_data %>%
-  dplyr::filter(DEPTH=="topsoil")
-permanova_top <- vegan::adonis2(phyloseq::distance(ps_hel_topsoil, method="bray") ~ C_N_ratio,
-                                permutations = 999, data = meta_data_top)
+permanova_top <- vegan::adonis2(bray_dist_top ~ TRAT2, permutations = 999, data = meta_data_top)
 permanova_top
 
+meta_data_top <- ps_hel_meta_data %>% dplyr::filter(DEPTH=="topsoil")
+
+disp_top <- betadisper(bray_dist_top, meta_data_top$TRAT2)
+anova(disp_top)
+
 ####SUBSOIL
-meta_data_sub <- ps_hel_meta_data %>%
-  dplyr::filter(DEPTH=="subsoil")
-permanova_sub <- vegan::adonis2(phyloseq::distance(ps_hel_subsoil, method="bray") ~ pH,
-                                permutations = 999, data = meta_data_sub)
+permanova_sub <- vegan::adonis2(bray_dist_sub ~ TRAT2, permutations = 999, data = meta_data_sub)
 permanova_sub
+
+meta_data_sub <- ps_hel_meta_data %>% dplyr::filter(DEPTH=="subsoil")
+
+disp_sub <- betadisper(bray_dist_sub, meta_data_top$TRAT2)
+anova(disp_sub)
 
 #Model R2 = the proportion of total variation in the Bray-Curtis distances that is explained by TRAT2
 #Residual R2: This is the proportion of variation not explained by TRAT2
@@ -968,171 +1146,6 @@ simper_results <- simper(asv_transposed, groups4, permutations = 999)
 summary(simper_results)
 ```
 
-*PCoA (Principal Coordinate Analysis)*
-- A linear metric ordination technique.
-- Distance preservation: Attempts to preserve actual distances (Euclidean-like) as much as possible.
--Assumes that the dissimilarity metric is a good approximation of true distances.
--The axes are ordered based on the amount of variation they explain.
--The distance between points is quantitative and can be directly interpreted.
--Best use case: When you assume a linear relationship between distances and the underlying data structure.
-🟢 Advantages:
-Provides a direct visualization of group differences.
-The percentage of variance explained by each axis is meaningful.
-🔴 Disadvantages:
-Can be influenced by highly skewed data or non-Euclidean relationships.
-Assumes a Euclidean-like structure, which is not always valid for ecological data.
-
-```{r Principal Coordinate Analysis (PCoA)}
-bray_dist <- phyloseq::distance(ps_hel, method="bray")
-# Perform PCoA
-pcoa_result <- cmdscale(bray_dist, k = 2)  # k = dimensions
-# Create a data frame for the PCoA results
-pcoa_df <- data.frame(PCoA1 = pcoa_result[, 1],
-                      PCoA2 = pcoa_result[, 2],
-                      Sample = rownames(pcoa_result))
-ps_hel_meta_data <- ps_hel_meta_data %>%
-  mutate(Sample = rownames(ps_hel_meta_data))
-
-# Merge with metadata
-pcoa_df <- merge(pcoa_df, ps_hel_meta_data, by = "Sample")
-
-#Add envfit
-env2_df <- ps_hel_meta_data %>%
-  dplyr::select(all_of(chem_vars))
-
-envfit_results  <- vegan::envfit(pcoa_result, env2_df, permutations = 999, na.rm = TRUE)
-
-arrows_df <- as.data.frame(scores(envfit_results, display = "vectors"))
-arrows_df$Variable <- rownames(arrows_df)
-mult <- 1.5  # para ajustar la longitud de las flechas al gráfico
-arrows_df <- arrows_df %>%
-  dplyr::mutate(PCoA1 = Dim1 * mult,
-                PCoA2 = Dim2 * mult)
-
-# Plot PCoA
-ggplot(pcoa_df, aes(x = PCoA1, y = PCoA2, color = TRAT2, shape = DEPTH)) +
-  geom_point(size = 4) +
-  geom_segment(data = arrows_df, aes(x = 0, y = 0, xend = PCoA1, yend = PCoA2),
-               arrow = arrow(length = unit(0.3, "cm")), color = "black") +
-  geom_text(data = arrows_df, aes(x = PCoA1, y = PCoA2, label = Variable),
-            size = 4, hjust = 0.5, vjust = -0.7) +
-  scale_color_manual(values = cols) +
-  theme_minimal() +
-  labs(x = "PCoA 1", y = "PCoA 2") +
-  theme(legend.position = "none") 
-#ggsave("PCoA.png")
-
-##############################################################################
-########### However our data does not seem Euclidean #########################
-##############################################################################
-#Zero-infltion check
-sum(psmelt(ps2)$Abundance == 0) / nrow(psmelt(ps2)) #Our data is super zero-inflated
-
-#Negative eigen values --> non-Euclidean data
-bray_dist <- phyloseq::distance(ps2, method = "bray")
-pcoa_bray <- ape::pcoa(bray_dist)
-# Check for negative eigenvalues
-pcoa_bray$values$Eigenvalues
-# If any value is negative → data is non-Euclidean
-
-#############################################################################
-#############################################################################
-
-####TOPSOIL
-bray_dist_top <- phyloseq::distance(ps_hel_topsoil, method="bray")
-# Perform PCoA
-pcoa_top <- cmdscale(bray_dist_top, k = 2)  # k = dimensions
-# Create a data frame for the PCoA results
-pcoa_top_df <- data.frame(PCoA1 = pcoa_top[, 1],
-                      PCoA2 = pcoa_top[, 2],
-                      Sample = rownames(pcoa_top))
-meta_data_top <- meta_data_top %>%
-  mutate(Sample = rownames(meta_data_top))
-
-# Merge with metadata
-pcoa_top_df <- merge(pcoa_top_df, meta_data_top, by = "Sample")
-
-# Plot PCoA
-ggplot(pcoa_top_df, aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
-  geom_point(size = 4) +
-  scale_color_manual(values = cols) +  
-  theme_minimal() +
-  labs(x = "PCoA 1", y = "PCoA 2") +
-  theme(
-    panel.background = element_blank(),
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank(),
-    axis.text.x = element_text(size = 14),  # Change this value as needed
-    axis.text.y = element_text(size = 14),
-    legend.position = "none"
-  )+
-  scale_x_reverse()
-#ggsave("PCoA_top.png")
-
-####SUBSOIL
-bray_dist_sub <- phyloseq::distance(ps_hel_subsoil, method="bray")
-# Perform PCoA
-pcoa_sub <- cmdscale(bray_dist_sub, k = 2)  # k = dimensions
-# Create a data frame for the PCoA results
-pcoa_sub_df <- data.frame(PCoA1 = pcoa_sub[, 1],
-                      PCoA2 = pcoa_sub[, 2],
-                      Sample = rownames(pcoa_sub))
-meta_data_sub <- meta_data_sub %>%
-  mutate(Sample = rownames(meta_data_sub))
-
-# Merge with metadata
-pcoa_sub_df <- merge(pcoa_sub_df, meta_data_sub, by = "Sample")
-
-# Plot PCoA
-ggplot(pcoa_sub_df, aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
-  geom_point(size = 4) +
-  scale_color_manual(values = cols) +  
-  theme_minimal() +
-  labs(x = "PCoA 1", y = "PCoA 2") +
-  scale_x_reverse()+
-  theme(
-    panel.background = element_blank(),
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank(),
-    axis.text.x = element_text(size = 14),  # Change this value as needed
-    axis.text.y = element_text(size = 14),
-    legend.position = "none"
-  )
-#ggsave("PCoA_sub.png")
-```
-
-```{r PCoA as linear predictor}
-#TOPSOIL
-lm_pcoa_top <- lm(PCoA1 ~ TRAT2, data = pcoa_top_df)
-summary(lm_pcoa_top)
-
-ggplot(pcoa_top_df, aes(x = TRAT2, y = PCoA1, fill = TRAT2)) +
-  geom_boxplot() +
-  geom_jitter(width = 0.1) +
-  theme_minimal()
-#ggsave("lm_pcoa_top.png")
-
-anova(lm(PCoA1 ~ TRAT2, data = pcoa_top_df))
-Tuckeys <- TukeyHSD(aov(PCoA1 ~ TRAT2, data = pcoa_top_df))
-cld <- multcompLetters4(lm_pcoa_top, Tuckeys)
-print(cld)
-
-#SUBSOIL
-lm_pcoa_sub <- lm(PCoA1 ~ TRAT2, data = pcoa_sub_df)
-summary(lm_pcoa_sub)
-
-ggplot(pcoa_sub_df, aes(x = TRAT2, y = PCoA1, fill = TRAT2)) +
-  geom_boxplot() +
-  geom_jitter(width = 0.1) +
-  theme_minimal()
-#ggsave("lm_pcoa_sub.png")
-
-anova(lm(PCoA1 ~ TRAT2, data = pcoa_sub_df))
-Tuckeys <- TukeyHSD(aov(PCoA1 ~ TRAT2, data = pcoa_sub_df))
-cld <- multcompLetters4(lm_pcoa_sub, Tuckeys)
-print(cld)
-```
-
 The main conclusion we can get out of this analysis is that there's a significant impact of wildfire severity on the topsoil while in the subsoil the difference is only between burnt vs unburnt
 
 ```{r Redundancy Analysis (RDA)}
@@ -1330,12 +1343,7 @@ ggplot(alpha_fungi, aes(x = pc1, y = Ergosterol_µg_g, color = TRAT2)) +
 ```
 
 
-
-
-
-
-
-
+############################ EXTRA ##############################################
 
 ```{r Sankey Diagram}
 ## We need two dataframes:
@@ -1374,3 +1382,144 @@ plot <- ranacapa::ggrare(ps1, step = 100, label = NULL, color = "ID", se = TRUE)
 #(plot <- plot + facet_wrap(~TRAT2))
 #ggsave("rarefactionps3.png")
 ```
+
+*NMDS (Non-Metric Multidimensional Scaling)*
+-A non-linear non-metric ordination technique.
+-Ranks distances rather than preserving actual values.
+-Only assumes that rank order of distances is meaningful.
+-Axes are arbitrary and do not have intrinsic meaning.
+-The distance between points is only relative (ordinal).
+Best use case: When working with non-Euclidean distances (e.g., Bray-Curtis) and non-normal ecological data.
+🟢 Advantages:
+More robust for ecological data with non-linear patterns.
+Works well with Bray-Curtis and other ecological dissimilarity metrics.
+🔴 Disadvantages:
+Cannot directly compare axes across different NMDS runs.
+Stress values must be interpreted to determine fit (stress < 0.2 is acceptable, < 0.1 is ideal).
+
+- We can use the vegdist function to calculate our distance matrix if we need it for further analysis, but the *metaMDS function* will automatically calculate the distance matrix based on the type of distance we choose.
+
+```{r NMDS}
+OTU.ord <- ordinate(ps_hel, "NMDS", "bray")
+
+ps_hel_meta_data <- data.frame(sample_data(ps_hel))  # Get the metadata from the ps object
+
+ps_hel_meta_data <- ps_hel_meta_data %>% 
+  mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
+         Ergosterol_µg_g = Ergosterol_ng_g_105/1000,
+         C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
+
+plot_vars <- c("Slope_per","Organic_layer_mean_depth_cm", "Charred_organic_layer_mean_cm", "Green_per", "Brown_per", "Consumed_per", "Grass_per", "Old_litter_per", "New_litter_per", "Mineral_per", "Ash_per", "Stone_per")
+
+env_df <- ps_hel_meta_data %>%
+  dplyr::select(all_of(plot_vars))
+
+chem_vars <- c("pH", "EC", "densidad_revisada_25", "C_N_ratio",
+              "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", 
+              "NH4_mgL_105","NO3_mgL_105", "Ergosterol_µg_g", 
+              "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
+              "Nitrogen_stock_Mg_ha", "SOM_per_corregido", "MBC_mg_kg_105",
+              "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
+              "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")
+
+env2_df <- ps_hel_meta_data %>%
+  dplyr::select(all_of(chem_vars))
+
+envfit_results  <- vegan::envfit(OTU.ord, env2_df, permutations = 999, na.rm = TRUE)
+
+env_coord_sig0 <- scores(envfit_results, "vectors")[envfit_results$vectors$pvals < 0.01, ] #Only the significant variables
+
+# Plot the ordination and add the environmental vectors
+plot_ordination(ps_hel, OTU.ord, color = "TRAT2") +
+  geom_point(size = 4) +  # Adjust point size
+  geom_polygon(alpha = 0.2) +
+  scale_fill_manual(values = cols) + 
+  scale_colour_manual(values = cols) +
+  geom_segment(data = as.data.frame(env_coord_sig0), 
+               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+               arrow = arrow(type = "open", length = unit(0.2, "inches")), 
+               size = 1, color = "blue") +
+  geom_text(data = as.data.frame(env_coord_sig0), 
+            aes(x = NMDS1, y = NMDS2, label = rownames(env_coord_sig0)),
+            size = 3, color = "blue") +
+  theme_minimal()
+#ggsave("nmds_hel.png")
+
+#####TOPSOIL
+ps_hel_topsoil <- subset_samples(ps_hel, DEPTH == "topsoil")
+
+# Perform ordination for topsoil samples
+OTU.ord_topsoil <- ordinate(ps_hel_topsoil, method = "NMDS", distance = "bray")
+
+#Add environmental data
+env_df_TOP <- ps_hel_meta_data %>%
+  filter(DEPTH == "topsoil") %>%
+  dplyr::select(all_of(chem_vars))
+
+envfit_TOP  <- vegan::envfit(OTU.ord_topsoil, env_df_TOP, permutations = 999, na.rm = TRUE)
+
+envfit_TOP_sig <- scores(envfit_TOP, "vectors")[envfit_TOP$vectors$pvals < 0.01, ] #Only the significant variables
+
+# Plot the ordination and add the environmental vectors
+plot_ordination(ps_hel, OTU.ord_topsoil, color = "TRAT2") +
+  geom_point(size = 4) +  # Adjust point size
+  geom_polygon(alpha = 0.1) +
+  scale_fill_manual(values = cols) + 
+  scale_colour_manual(values = cols) +
+  geom_segment(data = as.data.frame(envfit_TOP_sig), 
+               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+               arrow = arrow(type = "open", length=unit(0.06, "npc")), 
+               size = 1, color = "#737373") +
+  geom_text(data = as.data.frame(envfit_TOP_sig), 
+            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_TOP_sig)),
+            size = 3, color = "#737373") +
+  scale_x_reverse()+
+    theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 14),  # Change this value as needed
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"
+  )
+#ggsave("nmdsTOP_chem.png")
+
+#####SUBSOIL
+ps_hel_subsoil <- subset_samples(ps_hel, DEPTH == "subsoil")
+
+# Perform ordination for subsoil samples
+OTU.ord_subsoil <- ordinate(ps_hel_subsoil, method = "NMDS", distance = "bray")
+
+env_df_SUB <- ps_hel_meta_data %>%
+  filter(DEPTH == "subsoil") %>%
+  dplyr::select(all_of(chem_vars))
+
+envfit_SUB  <- vegan::envfit(OTU.ord_subsoil, env_df_SUB, permutations = 999, na.rm = TRUE)
+
+envfit_SUB_sig <- scores(envfit_SUB, "vectors")[envfit_SUB$vectors$pvals < 0.01, ] #Only the significant variables
+
+# Plot the ordination and add the environmental vectors
+plot_ordination(ps_hel, OTU.ord_subsoil, color = "TRAT2") +
+  geom_point(size = 4) +  # Adjust point size
+  geom_polygon(alpha = 0.2) +
+  scale_fill_manual(values = cols) + 
+  scale_colour_manual(values = cols) +
+  geom_segment(data = as.data.frame(envfit_SUB_sig), 
+               aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2),
+               arrow = arrow(type = "open", length = unit(0.06, "inches")), 
+              size = 1, color = "#737373") +
+  geom_text(data = as.data.frame(envfit_SUB_sig), 
+            aes(x = NMDS1, y = NMDS2, label = rownames(envfit_SUB_sig)),
+            size = 3, color = "#737373") +
+  #scale_x_reverse()+
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 14),  # Change this value as needed
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"
+  )
+#ggsave("nmdsSUB_chem.png")
+```
+
