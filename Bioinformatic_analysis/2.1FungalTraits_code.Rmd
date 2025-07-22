@@ -25,19 +25,68 @@ library(Polychrome)
 ```{r Uploading FungalTraits database}
 fungal_traits <- fungal_traits() #As we can see, the Genus column is clean. However in our dataset every genus name contains a "g__" as a prefix. In order to match both datasets we need to get rid of that prefix:
 head(fungal_traits)
-ps1_genus_melted$Genus_clean <- gsub("^g__", "", ps1_genus_melted$Genus)
-#write.csv(ps1_genus_melted, "ps1_genus_melted.csv")
+```
+
+```{r Collapse the fungal traits database}
+#We want to have a unique row for each Genus. In order to achieve this, we calculate the most frequent value (the mode) for each Genus in terms of each variable:
+moda <- function(x) {
+  ux <- na.omit(unique(x))
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# Group by Genus: 
+fungal_traits_mode <- fungal_traits %>%
+  dplyr::group_by(Genus) %>%
+  dplyr::summarise(across(everything(), moda), .groups = "drop")
+#write.csv(fungal_traits_mode, "fungal_traits_collapsed_moda.csv")
+```
+
+```{r Merging databases}
+
+ps1_genus_clean <- as.data.frame(tax_table(ps1_genus)) 
+ps1_genus_clean$Genus <- gsub("^g__", "", ps1_genus_clean$Genus)
+
+#Extraction of the abundance matrix
+otu_mat_genus <- as.data.frame(as.matrix(otu_table(ps1_genus)))
+
+identical(rownames(ps1_genus_clean), rownames(otu_mat_genus)) #Must be TRUE
+
+# Combine ABUNDANCE AND TAXA dataframes by Genus
+df_combined <- cbind(ps1_genus_clean, otu_mat_genus) # OR
+# Make rownames explicit
+df1 <- otu_mat_genus %>% rownames_to_column(var = "ASV_ID")
+df2 <- ps1_genus_clean %>% rownames_to_column(var = "ASV_ID")
+# Merge by ID
+df_combined <- df1 %>% 
+  left_join(df2, by = "ASV_ID")
+
+# Combine this dataframe with the Fungal Traits one
+df_traits_final <- df_combined %>%
+  dplyr::left_join(
+    fungal_traits_mode %>% dplyr::select(Genus, speciesMatched, confidence_fg, growth_form_fg, guild_fg, notes_fg, trophic_mode_fg),  
+    by = "Genus"
+  )
+```
+
+```{r Evaluation of the confidence level}
+asvs_by_confidence <- df_traits_final %>%
+  dplyr::group_by(confidence_fg) %>%
+  dplyr::summarise(n_ASVs = n_distinct(ASV_ID),
+                   .groups = "drop") %>%
+  dplyr::mutate(total_ASVs = n_total_asvs,
+                perc_ASVs = round((n_ASVs / total_ASVs) * 100, 1)
+  )
 ```
 
 ```{r % of matching}
 # Matching Genus level
-asvs_with_traits <- ps1_genus_melted %>%
-  dplyr::filter(!is.na(Genus_clean)) %>%
-  dplyr::filter(Genus_clean %in% unique(fungal_traits$Genus))
+asvs_with_traits <- df_combined %>%
+  dplyr::filter(!is.na(Genus)) %>%
+  dplyr::filter(Genus %in% unique(fungal_traits_mode$Genus))
 
 # Number of unique ASVs matching
-n_matching_asvs <- n_distinct(asvs_with_traits$OTU)
-n_total_asvs <- n_distinct(ps1_genus_melted$OTU)
+n_matching_asvs <- n_distinct(asvs_with_traits$ASV_ID)
+n_total_asvs <- n_distinct(df_combined$ASV_ID)
 
 cat("Number of ASVs matching with FungalTraits:", n_matching_asvs, "\n")
 cat("Number of total ASVs:", n_total_asvs, "\n")
@@ -57,33 +106,7 @@ cat("Total reads in dataset:", total_reads, "\n")
 cat("Percentage of matching reads:", matching_reads / total_reads * 100, "%\n") #This means that the 42% of ASVs matched with the fungal traits database actually represents 80% of the most abundant ASVs (fungal traits does not have info for our less abundant ASV, which is ok)
 ```
 
-```{r Collapse the fungal traits database}
-#We want to have a unique row for each Genus. In order to achieve this, we calculate the most frequent value (the mode) for each Genus in terms of each variable:
-moda <- function(x) {
-  ux <- na.omit(unique(x))
-  ux[which.max(tabulate(match(x, ux)))]
-}
-
-# Group by Genus: 
-fungal_traits_mode <- fungal_traits %>%
-  dplyr::group_by(Genus) %>%
-  dplyr::summarise(across(everything(), moda), .groups = "drop")
-#write.csv(fungal_traits_mode, "fungal_traits_collapsed_moda.csv")
-```
-
-```{r Merging databases}
-ps1melted_traits <- left_join(ps1_genus_melted, fungal_traits_mode, 
-                              by = c("Genus_clean" = "Genus")) #Genus level assignation
-
-# Evaluation of the confidence level
-asvs_by_confidence <- ps1melted_traits %>%
-  dplyr::group_by(confidence_fg) %>%
-  dplyr::summarise(n_ASVs = n_distinct(OTU),
-                   .groups = "drop") %>%
-  dplyr::mutate(total_ASVs = n_total_asvs,
-                perc_ASVs = round((n_ASVs / total_ASVs) * 100, 1)
-  )
-```
+################################################################################
 
 ```{r Paleta Neón}
 n_colors <- length(unique(ps1melted_traits_clean$guild_fg))

@@ -546,6 +546,40 @@ theme(
 #ggsave("Bubbles_top10phyla.png")
 ```
 
+```{r Venn Diagram}
+#install.packages("eulerr")
+library(eulerr)
+
+# OTU table
+otu_mat <- as.data.frame(otu_table(ps1_order))
+otu_mat <- as.data.frame(t(otu_mat))  # Asegúrate de que muestras en columnas
+
+# Metadata
+meta <- as(sample_data(ps1_order), "data.frame")
+meta$SampleID <- rownames(meta)
+
+# Loop para crear listas de ASVs presentes por severidad
+levels(meta$TRAT2)
+# Suponiendo que son: UB, LS, HS1, HS2
+
+asv_lists <- list()
+
+for (trat in unique(meta$TRAT2)) {
+  # Filtra muestras
+  samples_trat <- meta %>% 
+  dplyr::filter(TRAT2 == trat) %>% 
+    pull(SampleID)
+  # Subset tabla OTU
+  otu_sub <- otu_mat[, samples_trat, drop = FALSE]
+  # Filtra ASVs presentes (>0)
+  otu_sub$total <- rowSums(otu_sub)
+  otu_sub <- otu_sub[otu_sub$total > 0, ]
+  # Guarda lista de ASVs
+  asv_lists[[trat]] <- rownames(otu_sub)
+}
+
+```
+
 *Beta diversity* is going to account for the *turnover* across sites, treatments...
 It is based on distances --> we work with the *Hellinger transformed data*
 *Bray-Curtis* dissimilarity is indicated for ABUNDANCE data 
