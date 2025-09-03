@@ -1,5 +1,6 @@
 #Initial commit
 .Rproj.user
+.RDataTmp1
 .Rhistory
 .RData
 .Ruserdata
@@ -13,8 +14,13 @@ output_cutadapt/
 cutadapt.exe
 lulu.log_20240920_214521
 match_list.txt
+guilds.csv
 
 #Meta-analysis
 Metaanalysis_course.R
 effort_Amara.csv
 Metaanalysis_dataset.xlsx
+
+# Ignore all PNG images
+*.png
+*.jpg

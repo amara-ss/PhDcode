@@ -223,8 +223,8 @@ performance::r2(mixed.var)
 
 ```{r Linear Mixed Models by depth: TOPSOIL}
 models_topsoil <- dataset_pc1 %>% filter(DEPTH=="topsoil")
-var_top <- models_topsoil$Cu_mg_Kg_105
-var_log_top <- (log(models_topsoil$densidad_revisada_25)+1)
+var_top <- models_topsoil$C_N_ratio
+var_log_top <- (log(models_topsoil$C_N_ratio)+1)
 
 hist(var_log_top)
 
@@ -297,7 +297,7 @@ print(cld)
 ```{r Soil functions}
 # 1) Normalization of variables (resp_variables)
 std_response <- dataset_simple %>%
-  mutate(across(all_of(resp_variables),           
+  dplyr::mutate(across(all_of(resp_variables),           
                 ~ rescale(., to=c(0,1)),            
                 .names = "{.col}_standardized"))
 

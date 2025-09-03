@@ -194,6 +194,10 @@ clustered_asv_ids
 
 # Keep only ASVs that survived postclustering
 clustered_asv_table <- curated_asv_table[rownames(curated_asv_table) %in% clustered_asv_ids, ]
+
+# Keep only ASVs that survived postclustering (Biostrings object)
+clustered_asv_seqs <- clustered_asv[names(clustered_asv) %in% clustered_asv_ids]
+clustered_asv_seqs
 ```
 
 ```{r Assing taxonomy}

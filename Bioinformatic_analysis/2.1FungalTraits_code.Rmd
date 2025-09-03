@@ -18,8 +18,6 @@ output:
 #devtools::install_github("ropenscilabs/datastorr")
 #devtools::install_github("traitecoevo/fungaltraits")
 library(fungaltraits)
-#install.packages("Polychrome")
-library(Polychrome)
 ```
 
 ```{r Uploading FungalTraits database}
@@ -42,7 +40,6 @@ fungal_traits_mode <- fungal_traits %>%
 ```
 
 ```{r Merging databases}
-
 ps1_genus_clean <- as.data.frame(tax_table(ps1_genus)) 
 ps1_genus_clean$Genus <- gsub("^g__", "", ps1_genus_clean$Genus)
 
@@ -106,6 +103,209 @@ cat("Total reads in dataset:", total_reads, "\n")
 cat("Percentage of matching reads:", matching_reads / total_reads * 100, "%\n") #This means that the 42% of ASVs matched with the fungal traits database actually represents 80% of the most abundant ASVs (fungal traits does not have info for our less abundant ASV, which is ok)
 ```
 
+```{r Guild richness}
+# Integrate df_traits_final with metadata
+df_long <- df_traits_final %>%
+  pivot_longer(
+    cols = matches("-FIREFUNGI$"),  
+    names_to = "SampleID",
+    values_to = "Abundance"
+  ) 
+
+ps1_genus_metadata <- as(sample_data(ps1_genus), "data.frame") #With phyloseq objects this is the only way to turn this into a dataframe
+ps1_genus_metadata$SampleID <- rownames(ps1_genus_metadata)
+
+df_long_meta <- df_long %>%
+  dplyr::left_join(ps1_genus_metadata %>% 
+  dplyr::select(SampleID, PLOT, SITE, TRAT2, DEPTH), by = "SampleID")
+
+### DOES GUILD RICHNESS VARY ACROSS FIRE SEVERITY AND DEPTH? We need a richness number per sample (must include SampleID)
+richness_guild_df <- df_long_meta %>%
+  dplyr::group_by(SampleID, SITE, TRAT2, DEPTH) %>%
+  dplyr::summarise(Richness = n_distinct(guild_fg), .groups = "drop")
+
+richness_guild_df$DEPTH <- ordered(richness_guild_df$DEPTH, levels=c("topsoil", "subsoil"))
+
+ggplot(richness_guild_df, aes(x = TRAT2, y = Richness, fill = TRAT2, color=TRAT2)) +
+  geom_jitter(width = 0.2, size = 2) +
+  geom_boxplot(alpha = 0.3) +
+  scale_fill_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) +
+  scale_color_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) +
+  labs(
+    x = "Fire severity",
+    y = "Nº unique guilds"
+  ) +
+  theme_minimal()+
+  theme(
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 14),  # Change this value as needed
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"
+  ) +
+  facet_wrap(~DEPTH, scales="free_x")
+#ggsave("functional_guild_richness.png")
+
+hist(richness_guild_df$Richness)
+leveneTest(Richness ~ TRAT2 * DEPTH, data = richness_guild_df) #We can assume homogeneity of variance
+# If assumptions met → 2-way ANOVA:
+rich_aov <- aov(Richness ~ TRAT2 * DEPTH, data = richness_guild_df)
+summary(rich_aov)
+
+rich_lmer <- lmer(Richness ~ TRAT2 * DEPTH + (1|SITE), data = richness_guild_df)
+anova(rich_lmer)
+```
+
+```{r Relative guild abundance per fire severity}
+## First: relative abundance per sample
+df_rel <- df_long_meta %>%
+  dplyr::group_by(SampleID) %>%
+  dplyr::mutate(RelAbund = Abundance / sum(Abundance)) %>%
+  dplyr::ungroup()
+
+df_rel %>% ## Just to make sure the sum of rel abundances per sample = 1
+  dplyr::group_by(SampleID) %>%
+  dplyr::summarise(Suma_rel = sum(RelAbund))
+
+## Relative abundance per guild per sample
+guild_rel <- df_rel %>%
+  dplyr::group_by(SampleID, TRAT2, DEPTH, guild_fg) %>%
+  dplyr::summarise(RelAbund = sum(RelAbund), .groups = "drop") 
+
+guild_rel %>% ## Just to make sure the sum of rel abundances per guild per sample = 1
+  dplyr::group_by(SampleID) %>%
+  dplyr::summarise(Suma_rel = sum(RelAbund))
+
+## Summarise to graph
+guild_rel_summary <- guild_rel %>%
+  dplyr::group_by(TRAT2, DEPTH, guild_fg) %>%
+  dplyr::summarise(MeanRelAbund = mean(RelAbund),.groups = "drop") %>%
+  dplyr::group_by(TRAT2, DEPTH) %>%
+  dplyr::mutate(graph_abun = MeanRelAbund / sum(MeanRelAbund))
+
+guild_rel_summary$TRAT2 <- ordered(guild_rel_summary$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
+guild_rel_summary$DEPTH <- ordered(guild_rel_summary$DEPTH, levels = c("topsoil", "subsoil"))
+
+ggplot(guild_rel_summary, aes(x = TRAT2, y = graph_abun, fill = guild_fg)) +
+  geom_col(position = "stack") +
+  coord_flip() +  # Horizontal bars
+  facet_wrap(~DEPTH) +
+  ylab("Relative abundance (mean)") +
+  xlab("Soil depth") +
+  theme_minimal()+
+  theme(legend.position = "none")
+#ggsave("stacked_guilds.png")
+
+############## DOES RELATIVE ABUNDANCE DIFFER BY SEVERITY AND DEPTH?
+
+# We need to run statistical models. However, this data does not follow the model principles (normality of residues). Ej:
+df_rel_one <- guild_rel %>% 
+  dplyr::filter(guild_fg == "Soil Saprotroph")
+
+mod_top <- lm(RelAbund ~ TRAT2 , 
+                data = df_rel_one %>% filter(DEPTH == "topsoil"))
+anova(mod_top)
+
+par(mfrow=c(1,3))
+qqnorm(resid(mod_top)); qqline(resid(mod_top))
+hist(resid(mod_top))
+plot(fitted(mod_top), resid(mod_top)); abline(h=0)
+par(mfrow=c(1,1))
+
+shapiro.test(residuals(mod_top)) # Significant = RESIDUES NOT NORMALLY DISTRIBUTED
+
+# The Kruskal Wallis test would be more approperiate for this kind of data (let's run it only for the top95% abundance):
+top95_guilds <- df_long_meta %>%
+  dplyr::group_by(guild_fg) %>%
+  dplyr::summarise(TotalAbun = sum(Abundance, na.rm = TRUE)) %>%
+  dplyr::arrange(desc(TotalAbun)) %>%
+  dplyr::mutate(
+    RelAbun = TotalAbun / sum(TotalAbun),
+    CumAbun = cumsum(RelAbun)
+  ) %>%
+  dplyr::filter(CumAbun <= 0.95) 
+
+guild_summary <- guild_rel %>%
+  dplyr::group_by(guild_fg, TRAT2, DEPTH) %>%
+  dplyr::summarise(
+    MeanRelAbund = mean(RelAbund),           # promedio de abundancia relativa
+    SERelAbund   = sd(RelAbund) / sqrt(n()), # error estándar
+    n_samples    = n(),                       # número de réplicas
+    .groups = "drop"
+  )
+
+guild_summary <- guild_summary %>%
+  dplyr::mutate(
+    MeanPercent = MeanRelAbund * 100,
+    SEPercent   = SERelAbund * 100
+  )
+
+guild_csv <- guild_summary %>%
+  filter(guild_fg %in% c("Ectomycorrhizal", 
+                         "Plant Pathogen", 
+                         "Animal Pathogen", 
+                         "Endophyte", 
+                         "Wood Saprotroph", 
+                         "Leaf Saprotroph",
+                         "Ericoid Mycorrhizal"))
+
+#write.csv(guild_csv, "guilds.csv")
+
+df_rel_one <- guild_rel %>% 
+  dplyr::filter(guild_fg == "Plant Pathogen")
+
+kruskal.test(RelAbund ~ TRAT2 , 
+                data = df_rel_one %>% filter(DEPTH == "topsoil"))
+
+dunn_res <- dunnTest(RelAbund ~ TRAT2,  ## DUNN'S posthoc TEST recommended after Kruskal-Wallis
+                     data = df_rel_one %>% filter(DEPTH == "topsoil"),
+                     method = "bh")
+# Inspect results
+dunn_res$res
+
+# Convert to CLD letters
+cld <- cldList(P.adj ~ Comparison, 
+               data = dunn_res$res, 
+               threshold = 0.05)
+
+cld
+```
+
+```{r Relative guild and trophic mode abundance}
+
+
+
+df_rel <- df_long_meta %>%
+  #dplyr::filter(guild_fg %in% top4_forms) %>%
+  dplyr::group_by(SampleID, SITE, guild_fg, TRAT2, DEPTH) %>%
+  dplyr::summarise(Abundance = sum(Abundance), .groups = "drop") %>%
+  dplyr::group_by(SampleID) %>%
+  dplyr::mutate(RelAbun = Abundance / sum(Abundance)) %>%
+  ungroup()
+
+df_rel$DEPTH <- ordered(df_rel$DEPTH, levels=c("topsoil", "subsoil"))
+
+df_rel %>%
+  #filter(!is.na(guild_fg)) %>%
+  ggplot(aes(x = TRAT2, y = RelAbun, fill = guild_fg)) +
+  geom_bar(stat = "summary", fun = "mean", position = "stack", width = 0.7) +
+  coord_flip() +
+  facet_wrap(~ DEPTH) +
+  #scale_fill_brewer(palette = "Set2") +
+  theme_bw() +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.ticks.y = element_blank(),
+    panel.grid = element_blank(),
+    strip.text = element_text(size = 12),
+    legend.position = "none",
+    legend.title = element_blank()
+  ) +
+  labs(x = "Treatment", y = "Mean Relative Abundance", fill = "Guild")
+#ggsave("top95_stackedguilds.png")
+```
+
 ################################################################################
 
 ```{r Paleta Neón}
@@ -142,37 +342,6 @@ ps1melted_traits_clean %>%
   ) +
   labs(x = NULL, y = "Relative Abundance")
 #ggsave("FungalTraits_TrophicRelAbun.png")
-```
-
-```{r}
-# 1. Calcular abundancia total por forma funcional
-top4_forms <- ps1melted_traits_clean %>%
-  dplyr::group_by(guild_fg) %>%
-  dplyr::summarise(TotalAbun = sum(Abundance, na.rm = TRUE)) %>%
-  arrange(desc(TotalAbun)) %>%
-  slice_head(n =5) %>%
-  pull(guild_fg)
-
-# 2. Filtrar para quedarte solo con las 4 más abundantes
-ps1melted_traits_clean %>%
-  dplyr::filter(guild_fg %in% top4_forms) %>%
-  dplyr::group_by(Sample, guild_fg, TRAT2, DEPTH) %>%
-  dplyr::summarise(RelAbun = sum(Abundance) / n(), .groups = "drop") %>%
-  ggplot(aes(x = guild_fg, y = RelAbun, fill = guild_fg)) +
-  geom_boxplot(width = 0.6, outlier.size = 0.8, alpha = 0.8) +
-  scale_fill_manual(values = neon_palette[names(neon_palette) %in% top4_forms]) +
-  facet_grid(DEPTH ~ TRAT2, scales = "free_y") +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.ticks.x = element_blank(),
-    panel.grid = element_blank(),
-    strip.text = element_text(size = 12),
-    legend.position = "bottom",
-    legend.title = element_blank()
-  ) +
-  labs(x = NULL, y = "Relative Abundance")
-ggsave("poster_congreso.png")
 ```
 
 ```{r Visualization: Symbiotrophs}
