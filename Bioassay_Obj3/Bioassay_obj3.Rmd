@@ -1,0 +1,138 @@
+---
+title: "Bioassay - Obj3 Firefungi"
+author: "Amara Santiesteban Serrano"
+date: " r format(Sys.time(), '%d %B, %Y') "
+output: 
+  html_document:
+    df_print: paged
+    pdf_document: default
+    word_document: default
+  editor_options:
+    chunk_output_type: inline
+---
+
+```{r Packages}
+#install.packages("pacman")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "lmerTest", "emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "vegan", "hrbrthemes", "indicspecies", "GGally", "rpart", "rpart.plot", "irr", "evtree", "randomForest", "rfPermute", "devtools")
+```
+
+```{r Colors}
+cols <- c("#41b6c4","#fd8d3c","#cb181d","#800026")
+```
+
+```{r Data}
+bioassay <- AbioticBiotic_Bioassay
+str(bioassay)
+
+bioassay <- bioassay %>%
+    dplyr::mutate(
+    DEPTH = case_when(
+    DEPTH == "0_5"  ~ "topsoil",
+    DEPTH == "5_10" ~ "subsoil",
+    TRUE ~ DEPTH))
+```
+
+```{r Exploratory analysis}
+data %>%
+  ggplot(aes(x=Efecto, y=colonization_per, fill=Profundidad)) +
+  geom_boxplot(outlier.color = "red",
+    outlier.shape = 8) +
+  geom_jitter()+
+  scale_fill_brewer(palette="Dark2") +
+  stat_summary(fun= mean, geom="point", shape=20, size=2, colour="black") + 
+  facet_wrap(~ Profundidad, scales="free_x") 
+
+data %>%
+  ggplot(aes(x=Efecto, y=colonization_per, fill=Profundidad)) +
+  geom_point() +
+  scale_fill_brewer(palette="Dark2") +
+  stat_summary(fun= mean, geom="point", shape=20, size=2, colour="black") + 
+  facet_wrap(~ Profundidad, scales="free_x") 
+```
+
+```{r Colonization}
+bioassay$TRAT2 <- ordered(bioassay$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+bioassay$DEPTH <- ordered(bioassay$DEPTH, levels=c("topsoil", "subsoil"))
+
+var <- (sqrt(bioassay$colonization_per/100))
+
+hist(var)
+
+ggplot(bioassay, aes(x = Efecto, y = colonization_per, fill = DEPTH)) +
+  geom_boxplot(alpha=.2, outlier.shape = NA) +
+  geom_jitter(width = 0.2, size = 1.5)+
+  #scale_color_manual(values = cols) + 
+  #scale_fill_manual(values = cols)+
+  facet_wrap(~ TRAT2)
+
+## Models
+mod <- lmer(var ~ Efecto * TRAT2 * DEPTH + (1|Bandeja),
+            data = bioassay)
+
+par(mfrow=c(1,3))
+qqnorm(resid(mod)); qqline(resid(mod))
+hist(resid(mod))
+plot(fitted(mod), resid(mod)); abline(h=0)
+par(mfrow=c(1,1))
+
+anova(mod)
+
+car::Anova(mod, test.statistic="F", type=3)
+
+multcomp::cld(emmeans(mod, ~Efecto * TRAT2 * DEPTH, type="response"), Letters=letters) #Tuckey's post-hoc test
+
+## Models by effect: A, B, C
+bio_A <- bioassay %>%
+  dplyr::filter(Efecto=="A")
+
+mod_A <- lmer((sqrt(bioassay$colonization_per/100)) ~ TRAT2 * DEPTH + (1|Bandeja),
+            data = bio_A)
+par(mfrow=c(1,3))
+qqnorm(resid(mod_A)); qqline(resid(mod_A))
+hist(resid(mod_A))
+plot(fitted(mod_A), resid(mod_A)); abline(h=0)
+par(mfrow=c(1,1))
+car::Anova(mod_A, test.statistic="F", type=3)
+multcomp::cld(emmeans(mod_A, ~TRAT2 * DEPTH, type="response"), Letters=letters) 
+
+bio_B <- bioassay %>%
+  dplyr::filter(Efecto=="B")
+
+mod_B <- lmer(var ~ TRAT2 * DEPTH + (1|Bandeja),
+            data = bioassay)
+par(mfrow=c(1,3))
+qqnorm(resid(mod_B)); qqline(resid(mod_B))
+hist(resid(mod_B))
+plot(fitted(mod_B), resid(mod_B)); abline(h=0)
+par(mfrow=c(1,1))
+car::Anova(mod_B, test.statistic="F", type=3)
+multcomp::cld(emmeans(mod_B, ~TRAT2 * DEPTH, type="response"), Letters=letters) 
+
+bio_C <- bioassay %>%
+  dplyr::filter(Efecto=="C")
+
+mod_C <- lmer(var ~ TRAT2 * DEPTH + (1|Bandeja),
+            data = bioassay)
+par(mfrow=c(1,3))
+qqnorm(resid(mod_C)); qqline(resid(mod_C))
+hist(resid(mod_C))
+plot(fitted(mod_C), resid(mod_C)); abline(h=0)
+par(mfrow=c(1,1))
+car::Anova(mod_C, test.statistic="F", type=3)
+multcomp::cld(emmeans(mod_C, ~TRAT2 * DEPTH, type="response"), Letters=letters) 
+
+## Models by fire severity
+bio_LS <- bioassay %>%
+  dplyr::filter(TRAT2=="LS")
+
+mod_LS <- lmer(var ~ TRAT2 * DEPTH + (1|Bandeja),
+            data = bioassay)
+par(mfrow=c(1,3))
+qqnorm(resid(mod_UB)); qqline(resid(mod_UB))
+hist(resid(mod_UB))
+plot(fitted(mod_UB), resid(mod_UB)); abline(h=0)
+par(mfrow=c(1,1))
+car::Anova(mod_UB, test.statistic="F", type=3)
+multcomp::cld(emmeans(mod_UB, ~TRAT2 * DEPTH, type="response"), Letters=letters) 
+```
+

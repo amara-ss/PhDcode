@@ -37,6 +37,7 @@ El fundamento, lo que va a "buscar", son los duplicados de PCR (mutación durant
 OTU_table <- as.data.frame(asv_table)
 rownames(OTU_table) <- OTU_table[[1]]  # Asigna la primera columna a los nombres de fila
 OTU_table <- OTU_table[, -1]           # Elimina la primera columna
+#write.csv(OTU_table, "OTU_tab_precuration.csv")
 
 OTU_table[] <- lapply(OTU_table, as.numeric) #We need all the values as numbers, no <chr<
 head(OTU_table)
@@ -96,6 +97,7 @@ curated_result$minimum_relative_cooccurence
 #curated - ("parent" or "merged"), was this OTU kept as a valid OTU (parent) or merged with another
 #rank - The rank of the OTU in terms of decreasing spread and read count
 otu_map <- (curated_result$otu_map)
+#write.csv(otu_map, "otu_map.csv")
 ```
 
 ```{r Assing taxonomy}
@@ -104,6 +106,7 @@ otu_map <- (curated_result$otu_map)
 taxa2 <- as.data.frame(asv_tax)
 rownames(taxa2) <- taxa2[[1]]
 taxa2 <- taxa2[,-1]
+#write.csv(taxa2, "taxa2.csv")
 
 common_asv <- intersect(row.names(curated_asv_table), row.names(taxa2))
 common_asv

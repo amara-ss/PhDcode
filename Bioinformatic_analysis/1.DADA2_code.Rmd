@@ -60,22 +60,28 @@ untar(tgz_file) ##unzip
 # Define the path to the unzipped "Raw_data" folder
 path_raw_data <- "Raw_data"  
 # List the files in the "Raw_data" folder that contain the word "FIREFUNGI"
-firefungi_files <- list.files(path_raw_data, pattern = "FIREFUNGI", full.names = TRUE)
+
+#firefungi_files <- list.files(path_raw_data, pattern = "FIREFUNGI", full.names = TRUE)
+root_2021_files <- list.files(path_raw_data, pattern = "MICORRIZAS", full.names = TRUE)
 
 # Define the destination folder for the "FIREFUNGI" files
-destination_folder <-("Raw_data_firefungi_soil") 
+destination_folder <-("Raw_data_firefungi_roots") 
 # Create the destination folder if it doesn't exist
 if (!dir.exists(destination_folder)) {
   dir.create(destination_folder, recursive = TRUE)}
 # Move the files to the destination folder
-file.copy(firefungi_files, destination_folder, overwrite = TRUE)
+file.copy(root_2021_files, destination_folder, overwrite = TRUE)
 
-path_firefungi <- "Raw_data_firefungi_soil" # CHANGE ME to the directory containing the fastq files after unzipping.
-list.files(path_firefungi)
+#path_firefungi
+path_roots <- "Raw_data_firefungi_roots" # CHANGE ME to the directory containing the fastq files after unzipping.
+list.files(path_roots)
 
 # Read in the names of the fastq files, and perform some string manipulation to get matched lists of the forward and reverse fastq files. 
 fnFs <- sort(list.files(path_firefungi, pattern="_R1_001.fastq.gz", full.names = TRUE))
 fnRs <- sort(list.files(path_firefungi, pattern="_R2_001.fastq.gz", full.names = TRUE))
+
+fnFs_roots <- sort(list.files(path_roots, pattern="_R1_001.fastq.gz", full.names = TRUE))
+fnRs_roots <- sort(list.files(path_roots, pattern="_R2_001.fastq.gz", full.names = TRUE))
 # Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
 sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
 
@@ -87,8 +93,8 @@ count_reads <- function(fastq_file) {
 }
 
 # Count reads for all forward and reverse reads
-read_counts_F <- sapply(fnFs, count_reads)
-read_counts_R <- sapply(fnRs, count_reads)
+read_counts_F <- sapply(fnFs_roots, count_reads)
+read_counts_R <- sapply(fnRs_roots, count_reads)
 
 # Total reads per direction and in total
 total_reads_F <- sum(read_counts_F)
@@ -118,11 +124,12 @@ REV.orients <- allOrients(REV)
 FWD.orients
 
 #The presence of ambiguous bases (Ns) in the sequencing reads makes accurate mapping of short primer sequences difficult. Next we are going to “pre-filter” the sequences just to remove those with Ns, but perform no other filtering.
-fnFs.filtN <- file.path(path_firefungi, "filtN", basename(fnFs)) # Put N-filtered files in filtN/ subdirectory
-fnRs.filtN <- file.path(path_firefungi, "filtN", basename(fnRs))
-Filtered <- dada2::filterAndTrim(fnFs, fnFs.filtN, fnRs, fnRs.filtN, maxN = 0, multithread = FALSE) #multithread = TRUE --> this is only for UBUNTU or LINUX so the computer would run it in different threads
-Filtered
-str(Filtered)
+fnFs_roots.filtN <- file.path(path_roots, "filtN", basename(fnFs_roots)) # Put N-filtered files in filtN/ subdirectory
+fnRs_roots.filtN <- file.path(path_roots, "filtN", basename(fnRs_roots))
+#Filtered
+Filtered_roots <- dada2::filterAndTrim(fnFs_roots, fnFs_roots.filtN, fnRs_roots, fnRs_roots.filtN, maxN = 0, multithread = FALSE) #multithread = TRUE --> this is only for UBUNTU or LINUX so the computer would run it in different threads
+Filtered_roots
+str(Filtered_roots)
 #write.table(Filtered, "Filtered_Ns.txt") # .txt file with initial input sequences and final output sequences after Ns filtering (results will only show number of reads of the Forward sequence, so we consider it as the number of reads of pair sequences, Fwd-Rvs).
 
 #The length variation of the ITS region has significant consequences for the filtering and trimming steps of the standard DADA2 workflow: one of them is that primers can be found within the reads in some cases. We are now ready to count the number of times the primers appear in the forward and reverse read, while considering all possible primer orientations. Identifying and counting the primers on one set of paired end FASTQ files is sufficient, assuming all the files were created using the same library preparation, so we’ll just process the first sample:
@@ -131,9 +138,9 @@ primerHits <- function(primer, fn) {
     nhits <- Biostrings::vcountPattern(primer, ShortRead::sread(ShortRead::readFastq(fn)), fixed = FALSE)
     return(sum(nhits > 0))
 }
-rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs.filtN[[1]]), FWD.ReverseReads = sapply(FWD.orients,
-    primerHits, fn = fnRs.filtN[[1]]), REV.ForwardReads = sapply(REV.orients, primerHits,
-    fn = fnFs.filtN[[1]]), REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs.filtN[[1]]))
+rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs_roots.filtN[[1]]), FWD.ReverseReads = sapply(FWD.orients,
+    primerHits, fn = fnRs_roots.filtN[[1]]), REV.ForwardReads = sapply(REV.orients, primerHits,
+    fn = fnFs_roots.filtN[[1]]), REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs_roots.filtN[[1]]))
 ```
 
 ```{r Primers removal - Cutadapt}
@@ -148,13 +155,14 @@ system2(cutadapt, args = "--version") # 4.0
 
 #Remove primers with cutadapt and assess the output
 # Create directory to hold the output from cutadapt
-trimmed.d <- ("output_cutadapt")
+#trimmed.d <- ("output_cutadapt")
+trimmed.d_root <- ("output_cutadapt_root")
 # Create the destination folder if it doesn't exist
-if (!dir.exists(trimmed.d)) {
-  dir.create(trimmed.d, recursive = TRUE)}
+if (!dir.exists(trimmed.d_root)) {
+  dir.create(trimmed.d_root, recursive = TRUE)}
 
-fnFs.cut <- file.path(trimmed.d, basename(fnFs))
-fnRs.cut <- file.path(trimmed.d, basename(fnRs))
+fnFs.cut_root <- file.path(trimmed.d_root, basename(fnFs_roots))
+fnRs.cut_root <- file.path(trimmed.d_root, basename(fnRs_roots))
 
 # Save the reverse complements of the primers to variables
 FWD.RC <- dada2:::rc(FWD)
@@ -167,25 +175,25 @@ R1.flags <- paste("-g", FWD, "-a", REV.RC, "--minimum-length 50")
 R2.flags <- paste("-G", REV, "-A", FWD.RC, "--minimum-length 50")
 
 # Run Cutadapt
-for (i in seq_along(fnFs)) {
+for (i in seq_along(fnFs_roots)) {
   system2(cutadapt, args = c(R1.flags, R2.flags, "-n", 2, #"--revcomp", # -n 2 required to remove FWD and REV from reads
-                             "-o", fnFs.cut[i], "-p", fnRs.cut[i], # output files
-                             fnFs.filtN[i], fnRs.filtN[i])) # input files
+                             "-o", fnFs.cut_root[i], "-p", fnRs.cut_root[i], # output files
+                             fnFs_roots.filtN[i], fnRs_roots.filtN[i])) # input files
 }
 
  # As a sanity check, we will check for primers in the first cutadapt-ed sample:
 ## should all be zero!
-rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs.cut[[1]]),
-      FWD.ReverseReads = sapply(FWD.orients, primerHits, fn = fnRs.cut[[1]]),
-      REV.ForwardReads = sapply(REV.orients, primerHits, fn = fnFs.cut[[1]]),
-      REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs.cut[[1]]))
+rbind(FWD.ForwardReads_root = sapply(FWD.orients, primerHits, fn = fnFs.cut_root[[18]]),
+      FWD.ReverseReads_root = sapply(FWD.orients, primerHits, fn = fnRs.cut_root[[18]]),
+      REV.ForwardReads_root = sapply(REV.orients, primerHits, fn = fnFs.cut_root[[18]]),
+      REV.ReverseReads_root = sapply(REV.orients, primerHits, fn = fnRs.cut_root[[18]]))
 #Success! Primers are no longer detected in the cutadapted reads.
 
 #The primer-free sequence files are now ready to be analyzed through the DADA2 pipeline. Similar to the earlier steps of reading in FASTQ files, we read in the names of the cutadapt-ed FASTQ files and applying some string manipulation to get the matched lists of forward and reverse fastq files.
 
 # Forward and reverse fastq filenames have the format:
-cutFs <- sort(list.files(trimmed.d, pattern = "_R1_001.fastq.gz", full.names = TRUE))
-cutRs <- sort(list.files(trimmed.d, pattern = "_R2_001.fastq.gz", full.names = TRUE))
+cutFs_root <- sort(list.files(trimmed.d_root, pattern = "_R1_001.fastq.gz", full.names = TRUE))
+cutRs_root <- sort(list.files(trimmed.d_root, pattern = "_R2_001.fastq.gz", full.names = TRUE))
 
 # Extract sample names, assuming filenames have format:
 get.sample.name <- function(fname) strsplit(basename(fname), "_")[[1]][1]
@@ -202,61 +210,61 @@ head(sample.names)
 
 #Filter and trim
 # Place filtered files in filtered/ subdirectory (TO PLACE OUTPUT FROM NEXT STEP)
-filtFs <- file.path(trimmed.d, "filtered", basename(cutFs))
-filtRs <- file.path(trimmed.d, "filtered", basename(cutRs))
+filtFs_root <- file.path(trimmed.d_root, "filtered", basename(cutFs_root))
+filtRs_root <- file.path(trimmed.d_root, "filtered", basename(cutRs_root))
 
                   ################ The next steps can take several minutes ##################
 
-out <- dada2::filterAndTrim(cutFs, filtFs, cutRs, filtRs, maxN = 0, maxEE = c(2, 2), truncQ = 2,
+out_roots <- dada2::filterAndTrim(cutFs_root, filtFs_root, cutRs_root, filtRs_root, maxN = 0, maxEE = c(2, 2), truncQ = 2,
                      #cutFs = first input (forward); filtFs = were do we want the output
                      #cutRs = second input (reverse); filtRs = were do we want the output
                      ######### we leave truncLen out when working with ITS since it is an hyper variable region
                      #maxN = reads with ambiguous pairs allowed
                      #maxEE = maximum amount of estimated errors
        minLen = 50, rm.phix = TRUE, compress = TRUE, multithread = FALSE)  # on windows, set multithread = FALSE
-head(out)
+head(out_roots)
 #write.table(out, "out.txt") 
 
 # Total reads after filtering
-total_filtered_reads <- sum(out[, "reads.out"])
-cat("Total reads after filtering:", total_filtered_reads, "\n")
+total_filtered_root_reads <- sum(out_roots[, "reads.out"])
+cat("Total reads after filtering:", total_filtered_root_reads, "\n")
 
 #Error rates for each possible nucleotide transition --> it creates an error model that will be used downstream in the hardcore of the DADA2 algorithm
-errF <- dada2::learnErrors(filtFs, multithread=FALSE)
-errR <- dada2::learnErrors(filtRs, multithread=FALSE)
-dada2::plotErrors(errF, nominalQ=TRUE)
-dada2::plotErrors(errR, nominalQ=TRUE)
+errF_root <- dada2::learnErrors(filtFs_root, multithread=FALSE)
+errR_root <- dada2::learnErrors(filtRs_root, multithread=FALSE)
+dada2::plotErrors(errF_root, nominalQ=TRUE)
+dada2::plotErrors(errR_root, nominalQ=TRUE)
 
 #Sample Inference --> the hardcore of the DADA2 algorithm
-dadaFs <- dada2::dada(filtFs, err = errF, multithread = FALSE)
-dadaRs <- dada2::dada(filtRs, err = errR, multithread = FALSE)
+dadaFs_root <- dada2::dada(filtFs_root, err = errF_root, multithread = FALSE)
+dadaRs_root <- dada2::dada(filtRs_root, err = errR_root, multithread = FALSE)
 
 #Merge pair reads:
 #We now merge the forward and reverse reads together to obtain the full denoised sequences. Merging is performed by aligning the denoised forward reads with the reverse-complement of the corresponding denoised reverse reads, and then constructing the merged “contig” sequences. By default, merged sequences are only output if the forward and reverse reads overlap 
-mergers <- dada2::mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+mergers_root <- dada2::mergePairs(dadaFs_root, filtFs_root, dadaRs_root, filtRs_root, verbose=TRUE)
 # Inspect the merger data.frame from the first sample
-View(mergers[[1]])
+View(mergers_root[[1]])
 
 #Construct sequence table:
-seqtab <- dada2::makeSequenceTable(mergers)
-dim(seqtab)
+seqtab_root <- dada2::makeSequenceTable(mergers_root)
+dim(seqtab_root)
 # Inspect distribution of sequence lengths
-seq_lenght <- table(nchar(dada2::getSequences(seqtab))) #upper numbers = seq length, numbers below = nº of seqs with that length
+seq_root_lenght <- table(nchar(dada2::getSequences(seqtab_root))) #upper numbers = seq length, numbers below = nº of seqs with that length
 
 #Remove chimeras:
-seqtab.nochim <- dada2::removeBimeraDenovo(seqtab, method="consensus", multithread=FALSE, verbose=TRUE)
+seqtab_root.nochim <- dada2::removeBimeraDenovo(seqtab_root, method="consensus", multithread=FALSE, verbose=TRUE)
 #write.csv(seqtab.nochim, file = "seqtab.nochim.csv", row.names = TRUE)
-dim(seqtab.nochim)
-sum(seqtab.nochim)/sum(seqtab)
+dim(seqtab_root.nochim)
+sum(seqtab_root.nochim)/sum(seqtab_root)
 
 # Total reads after chimera removal
-total_reads_after <- sum(seqtab.nochim)
+total_reads_after <- sum(seqtab_root.nochim)
 cat("Total reads after chimera removal:", total_reads_after, "\n")
 #Number of ASV after chimera removal
-n_asvs <- ncol(seqtab.nochim)
+n_asvs <- ncol(seqtab_root.nochim)
 cat("total_ASVs", n_asvs, "\n")
 # Sum the total reads per sample
-sample_sums <- rowSums(seqtab.nochim)
+sample_sums <- rowSums(seqtab_root.nochim)
 # Get the average number of sequences per sample
 average_sequences <- mean(sample_sums)
 # Print the result
@@ -268,16 +276,17 @@ cat("Average number of sequences per sample:", average_sequences, "\n")
 getN <- function(x) sum(dada2::getUniques(x))
 
 # Build tracking table
-track <- data.frame(
-  input = out[, "reads.in"],
-  filtered = out[, "reads.out"],
-  denoisedF = sapply(dadaFs, getN),
-  denoisedR = sapply(dadaRs, getN),
-  merged = sapply(mergers, getN),
-  nonchim = rowSums(seqtab.nochim)
+track_dada2_root <- data.frame(
+  input = out_roots[, "reads.in"],
+  filtered = out_roots[, "reads.out"],
+  denoisedF = sapply(dadaFs_root, getN),
+  denoisedR = sapply(dadaRs_root, getN),
+  merged = sapply(mergers_root, getN),
+  nonchim = rowSums(seqtab_root.nochim)
 )
+#write.csv(track, "track_dada2_root.csv")
 
-rownames(track) <- names(out)
+rownames(track) <- names(out_roots)
 head(track)
 ```
 
@@ -288,21 +297,30 @@ head(track)
 # Assign taxonomy                 ###### ATENTION: HIGH COMPUTATIONAL EFFORT ######
                                    ### MORE THAN 1 DAY OF COMPUTING IN WINDOWS ###
 
-taxa <- dada2::assignTaxonomy(seqtab.nochim, "sh_general_release_dynamic_s_all_25.07.2023.fasta", minBoot = 80, multithread=FALSE) #My default DADA2 considers a 50% Boostrap threshold, but we wanted to try with a higher one (minBoot = 80%))
-#We could also set the minBoot to 0 --> this will give us a boostrap value per ASV so we can interpret and filter ourselves
+taxa_root <- dada2::assignTaxonomy(seqtab_root.nochim, "sh_general_release_dynamic_s_all_25.07.2023.fasta", minBoot = 0, multithread=FALSE, outputBootstraps = TRUE) #My default DADA2 considers a 50% Boostrap threshold, but we wanted to try with a higher one (minBoot = 80%))
+View(taxa_root$tax)
 
-#write.csv(taxa, file = "taxa_10_07_2024.csv", row.names = TRUE)
+##########################################################################################################################
+#We could also set the minBoot to 0 --> this will give us a boostrap value per ASV so we can interpret and filter ourselves
+##########################################################################################################################
+
+taxa_final2 <- cbind(taxa_root[[1]], taxa_root[[2]])
+#write.csv(taxa_final, "taxa_final_BTS.csv")
+
+####################################################
+
+#write.csv(cbind(t(seqtab_root.nochim), taxa_final), file="total_matrix.csv")
 
 #Let’s inspect the taxonomic assignments:
-taxa.print <- taxa # Removing sequence rownames for display only
-rownames(taxa.print) <- NULL
-head(taxa.print)
+taxa.print_root <- taxa_root # Removing sequence rownames for display only
+rownames(taxa.print_root) <- NULL
+head(taxa.print_root)
 
 #Percentage of ASVs assigned at each taxonomic level
 # Total number of ASVs
-total_asvs <- nrow(taxa)
+total_asvs <- nrow(taxa_root)
 # Percentage of assigned ASVs at each taxonomic level
-percent_assigned <- colSums(!is.na(taxa)) / total_asvs * 100
+percent_assigned <- colSums(!is.na(taxa_root)) / total_asvs * 100
 # Round for readability
 round(percent_assigned, 1)
 ```
@@ -313,7 +331,7 @@ Nuestro output en este punto es todo lo que necesitamos para analizar nuestro se
 
 ```{r replace sequences with ASV}
 
-output_folder <- ("Raw_data_firefungi_soil/dada2_output/")
+output_folder <- ("Raw_data_firefungi_roots/dada2_output/")
 # Create the destination folder if it doesn't exist
 if (!dir.exists(output_folder)) {
   dir.create(output_folder, recursive = TRUE)}
@@ -321,11 +339,11 @@ if (!dir.exists(output_folder)) {
 #transposed table and replace sequences with ASV (ASV_table.csv)
 #Extracted sequences and ASVs to make a fasta file (asv_OTU.fasta)
 
-asv_seqs <- colnames(seqtab.nochim)
-asv_headers <- vector(dim(seqtab.nochim)[2], mode="character")
+asv_seqs <- colnames(seqtab_root.nochim)
+asv_headers <- vector(dim(seqtab_root.nochim)[2], mode="character")
 
 #fasta header as ASV_
-for (i in 1:dim(seqtab.nochim)[2]) {
+for (i in 1:dim(seqtab_root.nochim)[2]) {
   asv_headers[i] <- paste(">ASV", i, sep="_")
 }
 
@@ -334,12 +352,12 @@ asv_fasta <- c(rbind(asv_headers, asv_seqs))
 View(asv_fasta)
 
 #ASV abundance
-asv_table <- t(seqtab.nochim)
-#head(seqtab.nochim)
+asv_table <- t(seqtab_root.nochim)
+#head(seqtab_root.nochim)
 row.names(asv_table) <- sub(">", "", asv_headers)
 
 #ASV taxonomy
-asv_tax <- taxa
+asv_tax <- as.data.frame(taxa_root$tax)
 row.names(asv_tax) <- sub(">", "", asv_headers)
 
 #merging abundance and tax table
@@ -353,7 +371,7 @@ asv_tax_file <- paste0(output_folder, "asv_tax.csv")
 OTU_TAX_table_file <- paste0(output_folder, "OTU_TAX_table.csv")
 
 #writing out output files
-#write.table(asv_fasta, asv_fasta_file, sep=",", quote=F, col.names=FALSE,row.names = FALSE)
+write.table(asv_fasta, asv_fasta_file, sep=",", quote=F, col.names=FALSE,row.names = FALSE)
 #write.table(asv_table, asv_table_file, sep=",", quote=F, col.names = NA)
 #write.table(asv_tax, asv_tax_file, sep=",", quote=F, col.names=NA)
 #write.table(OTU_TAX_table, OTU_TAX_table_file, sep=",", quote=F, col.names=NA)

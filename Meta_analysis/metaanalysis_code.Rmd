@@ -19,33 +19,39 @@ pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs", "metage
 ```
 
 ```{r Read dataset}
-excel_sheets("Metaanalysis_dataset.xlsx") #name of the excel sheets in our file
-metadata_WOS <- read_xlsx("Metaanalysis_dataset.xlsx", sheet = "metadata_WOS")
+
+metadata_WOS <- Metaanalysis_dataset
+#metadata_2025 <- Metaanalysis_dataset_NEW2025
 ```
 
 ```{r Dealing with duplicates}
 #We make sure that R finds titles that are duplicated despite how they are written:
-references_cleaned <- metadata_WOS %>%
+references_cleaned <- metadata_2025 %>%
   mutate(Title = str_to_lower(TITLE),  # Convert to lowercase
          Title = str_replace_all(Title, "[[:punct:]]", ""))  # Remove punctuation
 
 # See duplicated titles
 duplicates <- references_cleaned %>%
-  group_by(Title) %>%
-  filter(n() > 1)
+  dplyr::group_by(Title) %>%
+  dplyr::filter(n() > 1)
 
 #Remove duplicates:
 references_cleaned <- references_cleaned %>%  
-  distinct(Title, .keep_all = TRUE)
+  dplyr::distinct(Title, .keep_all = TRUE)
+```
+
+```{r}
+metadata_WOS_2025 <- metadata_WOS %>%
+  dplyr::filter(Database_year=="Spain")
 ```
 
 ```{r Abstract screening}
-effort_distribute(references_cleaned,
+effort_distribute(metadata_WOS_2025,
                   reviewers = "Amara",
                   initialize = TRUE,
                   save_split = TRUE)
 
-abstract_screener("Effort_Amara.csv", 
+abstract_screener("effort_Amara3.csv", 
                   "Amara",
                   highlightKeywords = c("fire", "burn", "ectomycorrhiza", 
                                         "mycorrhiza", "fungi"))
@@ -91,6 +97,7 @@ phases <- c("START_PHASE: 573 of studies identified through database searching",
 #png("PRISMA_flow_diagram.png", width = 1600, height = 1200, res = 160)
 plot_PRISMA(phases)
 dev.off()
+?plot_PRISMA
 ```
 
 *Part II*: data analysis

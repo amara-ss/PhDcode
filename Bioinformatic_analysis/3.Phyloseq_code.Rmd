@@ -15,7 +15,7 @@ output:
 
 ```{r Packages}
 #install.packages("pacman")
-pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car", "plyr", "ggpubr", "ggsignif", "ape", "cooccur", "igraph", "reshape2", "cowplot", "patchwork", "randomForest", "rfPermute", "ggtree", "FSA", "rcompanion", "phytools")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car", "plyr", "ggpubr", "ggsignif", "ape", "cooccur", "igraph", "reshape2", "cowplot", "patchwork", "randomForest", "rfPermute", "ggtree", "FSA", "rcompanion", "phytools", "msa")
 ```
 
 ```{r Packages: BiocManager}
@@ -73,23 +73,43 @@ meta_data_pc1 <- meta_data_pc1 %>%
 
 #### PHY: Phylogenetic Tree
 
-saveRDS(dna, file = "phy_Amara.rds")
-
 # 1) Align sequences with DECIPHER
-dna <- DNAStringSet(clustered_asv_seqs)                       
-alignment <- AlignSeqs(dna)           
+#dna <- DNAStringSet(clustered_asv_seqs)   
+#saveRDS(dna, file = "phy_Amara.rds")
+#alignment <- AlignSeqs(dna)           
 
 # 2) Convertir a phyDat y estimar árbol con longitudes de rama
-phyd <- phyDat(as(alignment, "matrix"), type = "DNA")
-dm   <- dist.ml(phyd)                           # distancias ML
-njt  <- NJ(dm)                                  # árbol inicial rápido
-fit  <- pml(njt, phyd)
-fit  <- optim.pml(fit, optNni = TRUE, model = "GTR", optGamma = TRUE)  # longitudes y modelo
-tree <- fit$tree                                  # árbol final con ramas
+#phyd <- phyDat(as(alignment, "matrix"), type = "DNA")
+#dm   <- dist.ml(phyd)                           # distancias ML
+#njt  <- NJ(dm)                                  # árbol inicial rápido
+#fit  <- pml(njt, phyd)
+#fit  <- optim.pml(fit, optNni = TRUE, model = "GTR", optGamma = TRUE)  # longitudes y modelo
+#tree <- fit$tree                                  # árbol final con ramas
 
 # Root the tree:
-tree <- midpoint(tree)
-plot(tree)
+#tree <- midpoint(tree)
+#plot(tree)
+```
+
+```{r Construct Phy Tree}
+# We begin by performing a multiple-alignment of the inferred sequences
+#seqs <- dada2::getSequences(seqtab.nochim)
+names(clustered_asv_seqs) <- clustered_asv_seqs # This propagates to the tip labels of the tree
+mult <- msa(clustered_asv_seqs, method="ClustalW", type="dna", order="input")
+
+# The phangorn package is then used to construct a phylogenetic tree
+phang.align <- as.phyDat(mult, type="DNA")
+dm <- dist.ml(phang.align)
+treeNJ <- NJ(dm) # Note, tip order != sequence order
+fit = pml(treeNJ, data=phang.align)
+
+fitGTR <- update(fit, k=4, inv=0.2)
+#fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma=TRUE,
+#                       rearrangement = "stochastic", control = pml.control(trace = 0))
+plot(fitGTR$tree)
+
+fitGTR$tree$tip.label <- rownames(clustered_asv_table)
+fitGTR$tree$tip.label
 ```
 
 The *phyloseq package* is a tool to import, store, analyze, and graphically display complex phylogenetic sequencing data that has already been clustered into Operational Taxonomic Units (OTUs), especially when there is associated sample data, phylogenetic tree, and/or taxonomic assignment of the OTUs. This package leverages many of the tools available in R for ecology and phylogenetic analysis (vegan, ade4, ape, picante), while also using advanced/flexible graphic systems (ggplot2) to easily produce publication-quality graphics of complex phylogenetic data. 
@@ -98,7 +118,7 @@ The *phyloseq package* is a tool to import, store, analyze, and graphically disp
 ps <- phyloseq::phyloseq(otu_table(clustered_asv_table, taxa_are_rows=TRUE), 
                          sample_data(meta_data, sample_names(sample.names)),
                          tax_table(clustered_tax_table),
-                         phy_tree(tree))
+                         phy_tree(fitGTR$tree))
 ps
 ```
 
@@ -338,6 +358,7 @@ ps1_family_subsoil <- subset_samples(ps1_family, DEPTH == "subsoil")
 ps1_family_subsoil <- filter_taxa(ps1_family_subsoil, function(x) sum(x) > 0, prune = TRUE)
 
 # Genus
+tax_table(ps1)
 ps1_genus <- tax_glom(ps1, taxrank = "Genus")
 sample_data(ps1_genus)
 tax_table(ps1_genus)
@@ -1369,54 +1390,93 @@ ggplot(SUB_abundances, aes(x = stat, y = Genus, color = stat)) +
 ```
 
 ```{r Indicator Species Phylogeny}
-# Extract phylogenetic tree from your phyloseq object
-tree <- phy_tree(ps1_sub)
-tax_phy <- as.data.frame(tax_table(ps1_sub)) 
+# Extract phylogenetic tree from your phyloseq object. 
+# Let's do it with the ps1_genus table so not every single species tip appears:
+indc_tree <- phy_tree(ps1_genus_topsoil)
+tax_phy <- as.data.frame(tax_table(ps1_genus_topsoil)) 
 tax_phy$ASV <- rownames(tax_phy)
-  
-# Vector of indicator species (example: ASV IDs)
-ind_spp <- sig_SUB_ind$ASV
 
+all(tree$tip.label %in% rownames(clustered_asv_table)) #TRUE
+all(tree$tip.label %in% rownames(tax_table(ps1))) #TRUE
+
+ggtree(indc_tree) +
+geom_text2(aes(label = node), hjust = -0.3, size = 2)
+
+# Vector of indicator species (example: ASV IDs)
+ind_spp <- sig_TOP_ind$ASV
 # Make dataframe for ggtree
 # Only indicator species, keep their TRAT2 info
-indicator_df <- SUB_abundances %>%      # or your metadata dataframe
+indicator_df <- TOP_abundances %>%      
   dplyr::filter(ASV %in% ind_spp) %>%
   dplyr::select(ASV, TRAT2) %>%
-  dplyr::distinct() 
+  dplyr::left_join(tax_phy, by = "ASV")
   #dplyr::rename(ASV = ASV)
 
-# Add tax names
-indicator_df <- indicator_df %>% 
-  dplyr::left_join(tax_phy, by = "ASV")
+# Extract tree info with nodes - ASV: 
+tree_data <- fortify(indc_tree) %>%
+  dplyr::filter(isTip) %>%
+  select(label, node) 
 
-# 4️⃣ Plot tree with ggtree
-ggtree(tree, layout = "circular", open.angle = 30) %<+% indicator_df +
-  #geom_tiplab(size=2) +
-  geom_tippoint(aes(color = TRAT2), size = 3) +
-  #scale_color_manual(values = cols)+
+# Merge with indicator_df (label == ASV)
+tree_data2 <- tax_phy %>%
+  dplyr::left_join(tree_data, by = c("ASV" = "label"))
+
+# Clade definition
+clade_nodes <- tree_data2 %>%
+  dplyr::group_by(Phylum) %>%
+  dplyr::summarise(node = MRCA(tree, ASV), .groups = "drop")
+
+ggtree(indc_tree, layout = "rectangular", branch.length = "none") %<+% tree_data2 +
+  geom_highlight(node = clade_nodes$node,
+                 alpha = 0.1) +
+  geom_tree(linewidth = 0.5) +
+  geom_tiplab(aes(label = Genus), size = 2, align = TRUE, offset = 0.05) +
   theme_tree2() +
-  theme(legend.position = "right") +
-  scale_color_brewer(palette = "Set1")
-#ggsave("indic_phy_SUB.png", width = 10, height = 10, dpi = 300)
+  theme(legend.position = "right") 
+
+# Plot tree with ggtree
+ggtree(indc_tree, layout = "rectangular", open.angle = 30, branch.length = "none") %<+% tree_data2 +
+  geom_highlight(node=329, fill="purple", alpha=0.2)+
+  geom_highlight(node=646, fill="green", alpha=0.2)+
+  geom_highlight(node=325, fill="blue", alpha=0.2)+
+  geom_highlight(node=636, fill="orange", alpha=0.2)+
+  geom_highlight(node=490, fill="red", alpha=0.2)+
+  geom_highlight(node=653, fill="lightblue", alpha=0.2)+
+  geom_tiplab(aes(label= Genus), size=2) +
+  geom_tippoint(aes(color = TRAT2), size = 3, na.rm = TRUE) +
+  #theme_tree2() +
+  theme(legend.position = "none") 
+ggsave("trial_TOP_tree.png")
+```
+
+```{r}
+head(indc_tree$tip.label)               # nombres de las puntas del árbol
+head(rownames(tax_phy))            # nombres de las filas de tax_table
+setdiff(tree$tip.label, rownames(tax_phy))
+setdiff(rownames(tax_phy), tree$tip.label)
+# Forzar coincidencia
+rownames(tax_phy) <- indc_tree$tip.label
+
 ```
 
 ```{r Phylogenetic signal}
-install.packages("picante")
-library(picante)
 
-# OTU table con abundancia de tus indicadores por muestra
-otu_ind <- otu_table(ps1_sub)[ind_spp, , drop=FALSE]
-
-# matriz binaria de presencia/ausencia por tratamiento
-# por ejemplo, ASVs presentes en cada tratamiento
-trait_matrix <- indicator_df %>%
-  dplyr::mutate(value = 1) %>%
-  pivot_wider(names_from = TRAT2, values_from = value, values_fill = 0) %>%
-  column_to_rownames("ASV")
-
-# Filogenetic clustering: calcula MPD por grupo
-ses.mpd_result <- ses.mpd(samp = trait_matrix, dis = ordu_unw, null.model = "taxa.labels")
-?ses.mpd
+set.seed(102) 
+tree <- rtree(60) 
+p <- ggtree(tree) 
+p1 <- p + geom_hilight(node=62, fill="white") + geom_hilight(node=88, fill="red") 
+p1 
+dat <- data.frame(id=c(62, 88), type=c("A", "B")) 
+dat
+p2 <- p + geom_hilight(data=dat, mapping=aes(node=id, fill=type)) 
+p2 
+p3 <- p + geom_hilight(data=dat, mapping=aes(node=id, fill=type), align="left") 
+p4 <- p + geom_hilight(data=dat, mapping=aes(node=id, fill=type), align="right") 
+p5 <- p + geom_hilight(data=dat, mapping=aes(node=id, fill=type), align="both") # display the high light layer with gradiental color rectangular. 
+p6 <- p + geom_hilight(data=dat, mapping=aes(node=id, fill=type), type = "gradient", alpha=0.68) 
+p7 <- p + geom_hilight(data=dat, mapping=aes(node=id, fill=type), type = "gradient", gradient.direction="tr", alpha=0.68) # display the high light layer with round rectangular. 
+p8 <- p + geom_hilight(data=dat, mapping=aes(node=id, fill=type), type = "roundrect", alpha=0.68) 
+p2/ p3/ p4/ p5 / p6/ p7/ p8
 ```
 
 ```{r Microbiome network plot}

@@ -7,6 +7,7 @@
 
 # Bioinformatic_analysis
 Raw_data.tgz
+*.fastq.gz
 sh_general_release_dynamic_s_all_25.07.2023.fasta
 Raw_data/
 Raw_data_firefungi_soil
@@ -21,6 +22,6 @@ Metaanalysis_course.R
 effort_Amara.csv
 Metaanalysis_dataset.xlsx
 
-# Ignore all PNG images
+# Ignore all images
 *.png
 *.jpg
