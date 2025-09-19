@@ -7,10 +7,10 @@
 
 # Bioinformatic_analysis
 Raw_data.tgz
-*.fastq.gz
 sh_general_release_dynamic_s_all_25.07.2023.fasta
 Raw_data/
 Raw_data_firefungi_soil
+Raw_data_firefungi_roots
 output_cutadapt/
 cutadapt.exe
 lulu.log_20240920_214521
