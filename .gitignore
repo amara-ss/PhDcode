@@ -16,6 +16,7 @@ cutadapt.exe
 lulu.log_20240920_214521
 match_list.txt
 guilds.csv
+PlotDigitizer/
 
 #Meta-analysis
 Metaanalysis_course.R
@@ -25,3 +26,4 @@ Metaanalysis_dataset.xlsx
 # Ignore all images
 *.png
 *.jpg
+*.log
