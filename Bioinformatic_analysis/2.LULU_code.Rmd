@@ -35,8 +35,8 @@ El fundamento, lo que va a "buscar", son los duplicados de PCR (mutación durant
 
 #First, IMPORT DATASET "Raw_data_firefungi_soil > dada2_output > asv_table.csv
 OTU_table <- as.data.frame(asv_table)
-rownames(OTU_table) <- OTU_table[[1]]  # Asigna la primera columna a los nombres de fila
-OTU_table <- OTU_table[, -1]           # Elimina la primera columna
+#rownames(OTU_table) <- OTU_table[[1]]  # Asigna la primera columna a los nombres de fila
+#OTU_table <- OTU_table[, -1]           # Elimina la primera columna
 #write.csv(OTU_table, "OTU_tab_precuration.csv")
 
 OTU_table[] <- lapply(OTU_table, as.numeric) #We need all the values as numbers, no <chr<
@@ -64,7 +64,7 @@ matchlist <- read.table("match_list.txt")
 ```{r LULU curation}
 curated_result <- lulu::lulu(OTU_table, matchlist)
 
-output_folder <- "Raw_data_firefungi_soil/dada2_output"
+output_folder <- "Raw_data_firefungi_roots/dada2_output"
 
 #The curated OTU table
 curated_asv_table <- curated_result$curated_table

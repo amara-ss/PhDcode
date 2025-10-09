@@ -65,6 +65,11 @@ df_traits_final <- df_combined %>%
   )
 ```
 
+```{r}
+vista <- df_traits_final %>%
+  dplyr::filter(Phylum=="p__Mortierellomycota")
+```
+
 ```{r Evaluation of the confidence level}
 asvs_by_confidence <- df_traits_final %>%
   dplyr::group_by(confidence_fg) %>%
@@ -87,6 +92,21 @@ n_total_asvs <- n_distinct(df_combined$ASV_ID)
 
 cat("Number of ASVs matching with FungalTraits:", n_matching_asvs, "\n")
 cat("Number of total ASVs:", n_total_asvs, "\n")
+
+# Sum of reads matching Genus level traits
+reads_matching <- asvs_with_traits %>%
+  dplyr::select(-ASV_ID, -Kingdom, -Phylum, -Class, -Order, -Family, -Genus, -Species) %>%   
+  as.matrix() %>%
+  sum(na.rm = TRUE)
+
+# Total reads in dataset
+total_reads <- df_combined %>%
+  dplyr::select(-ASV_ID, -Kingdom, -Phylum, -Class, -Order, -Family, -Genus, -Species) %>%
+  as.matrix() %>%
+  sum(na.rm = TRUE)
+
+cat("Number of reads matching with FungalTraits:", reads_matching, "\n")
+cat("Total number of reads:", total_reads, "\n")
 
 # 42.2% of taxonomic assignment by Genus
 
@@ -184,18 +204,34 @@ guild_rel_summary <- guild_rel %>%
   dplyr::group_by(TRAT2, DEPTH) %>%
   dplyr::mutate(graph_abun = MeanRelAbund / sum(MeanRelAbund))
 
-guild_rel_summary$TRAT2 <- ordered(guild_rel_summary$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
-guild_rel_summary$DEPTH <- ordered(guild_rel_summary$DEPTH, levels = c("topsoil", "subsoil"))
+guild_rel_summary2 <- guild_rel_summary %>%
+  dplyr::group_by(TRAT2, DEPTH) %>%
+  dplyr::mutate(guild_fg = ifelse(graph_abun < 0.02, "Other", as.character(guild_fg))) %>%
+  ungroup()
 
-ggplot(guild_rel_summary, aes(x = TRAT2, y = graph_abun, fill = guild_fg)) +
+guild_rel_summary2$TRAT2 <- ordered(guild_rel_summary2$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
+guild_rel_summary2$DEPTH <- ordered(guild_rel_summary2$DEPTH, levels = c("topsoil", "subsoil"))
+
+ggplot(guild_rel_summary2, aes(x = TRAT2, y = graph_abun, fill = guild_fg)) +
   geom_col(position = "stack") +
   coord_flip() +  # Horizontal bars
   facet_wrap(~DEPTH) +
   ylab("Relative abundance (mean)") +
   xlab("Soil depth") +
-  theme_minimal()+
-  theme(legend.position = "none")
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(),
+    strip.background = element_blank(),  # Remove strip background
+    axis.text.x = element_text(angle = 0.1, hjust = 1),  # Rotate x-axis labels
+    panel.background = element_blank(),  # Remove panel background color
+    plot.background = element_blank(),   # Remove plot background color
+    legend.position = "none"             # Remove legend
+  )
 #ggsave("stacked_guilds.png")
+
+
 
 ############## DOES RELATIVE ABUNDANCE DIFFER BY SEVERITY AND DEPTH?
 

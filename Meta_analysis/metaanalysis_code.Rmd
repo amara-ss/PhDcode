@@ -18,6 +18,13 @@ output:
 pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs", "metagear")
 ```
 
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("EBImage")
+```
+
 ```{r Read dataset}
 
 metadata_WOS <- Metaanalysis_dataset
@@ -148,6 +155,63 @@ ggplot(ma_dataset, aes(x=Study_Year, fill=Sample_type)) +
   labs(x = "Study year", y = "Count")
 ```
 
+### IMAGES DATA EXTRACTION
+
+```{r}
+figure_scatterPlot(file="scatter_trial.png")
+```
+
+```{r Data}
+a <- X180_ca_burnt
+b <- X180_ca_control
+c <- X497_nmds_control
+d <- X403_2003_10_20
+e <- X403_control_2016_10_20
+f <- X403_control_2015_10_20
+g <- X403_control_2009_10_20
+h <- X403_control_2003_10_20
+```
+
+```{r Euclidean distances}
+## Dt (Distance within treatment group)
+t <- rbind(
+  a %>% mutate(group="2016_10_20"),
+  b %>% mutate(group="2015_10_20"),
+  c %>% mutate(group="2009_10_20"),
+  d %>% mutate(group="2003_10_20"))
+
+t_group <- a %>% 
+  #dplyr::filter(group=="2016_10_20") %>% 
+  dplyr::select(x,y)
+
+#plot(t_group$x, t_group$y)
+D <- dist(t_group, method="euclidean")
+Dt <- mean(as.vector(D))
+Dt
+
+## Dc (Distance within control group)
+c <- rbind(
+  e %>% mutate(group="control_2016_10_20"),
+  f %>% mutate(group="control_2015_10_20"),
+  g %>% mutate(group="control_2009_10_20"),
+  h %>% mutate(group="control_2003_10_20")
+)
+
+c_group <- b %>%
+  #dplyr::filter(group=="control_2016_10_20") %>% 
+  dplyr::select(x,y)
+
+D <- dist(c_group, method="euclidean")
+Dc <- mean(as.vector(D))
+Dc
+
+## Db (Distance between groups)
+pairs <- expand.grid(1:nrow(c_group), 1:nrow(t_group))
+Db <- mean(apply(pairs, 1, function(idx) {
+  sqrt(sum((c_group[idx[1],] - t_group[idx[2],])^2))
+}))
+Db
+```
 
 
 
