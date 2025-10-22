@@ -395,6 +395,12 @@ ps1_phylum <- tax_glom(ps1, taxrank = "Phylum")
 sample_data(ps1_phylum)
 tax_table(ps1_phylum)
 ps1_phylum_melted <- psmelt(ps1_phylum)
+# Phylum TOPSOIL
+ps1_phylum_topsoil <- subset_samples(ps1_phylum, DEPTH == "topsoil")
+ps1_phylum_topsoil <- filter_taxa(ps1_phylum_topsoil, function(x) sum(x) > 0, prune = TRUE)
+# Phylum SUBSOIL
+ps1_phylum_subsoil <- subset_samples(ps1_phylum, DEPTH == "subsoil")
+ps1_phylum_subsoil <- filter_taxa(ps1_phylum_subsoil, function(x) sum(x) > 0, prune = TRUE)
 
 # Class
 ps1_class <- tax_glom(ps1, taxrank = "Class")
@@ -1154,9 +1160,9 @@ permanova
 #F: higher values mean stronger between-group vs within-group differences.
 
 # Check dispersion
-disp <- betadisper(bray_dist, ps_hel_meta_data$TRAT2)
+disp <- betadisper(bray_dist, ps_hel_meta_data$DEPTH)
 anova(disp)
-
+permutest(disp)
 permutest(disp, pairwise=TRUE)
 
 ####TOPSOIL
@@ -1294,7 +1300,7 @@ incMSE_df <- incMSE_df[order(incMSE_df$IncMSE, decreasing = TRUE), ]
 # Ver los resultados
 print(incMSE_df)
 
-#ggplot(incMSE_df, aes(x = reorder(Variable, IncMSE), y = IncMSE, fill = IncMSE)) +
+ggplot(incMSE_df, aes(x = reorder(Variable, IncMSE), y = IncMSE, fill = IncMSE)) +
   geom_col() +
   coord_flip() +
   theme_minimal() +
@@ -1345,7 +1351,7 @@ ggplot(incMSE_df, aes(x = reorder(Variable, IncMSE), y = IncMSE, fill= pvalueInc
     strip.placement = "outside",  # Place strip labels outside the plot
     strip.background = element_blank()  # Remove strip background
   )
-ggsave("rfPermute_SUBSOIL.png", height = 5, width = 6, dpi = 300)
+#ggsave("rfPermute_SUBSOIL.png", height = 5, width = 6, dpi = 300)
 ```
 *We've run all these analysis with the raw data and the Hellinger transformed data and results are practically the same*
 Species are chosen as indicators if they:
@@ -1411,7 +1417,20 @@ sig_indicators <- indicator_with_taxonomy4 %>%
 ```
 
 ```{r Species Indicator Analysis: TOPSOIL}
+## Phylum
+ps1_phylum_metaTOP <- as(sample_data(ps1_phylum_topsoil), "data.frame") # metadata
+otu_mat_TOP <- as.data.frame(as.matrix(otu_table(ps1_phylum_topsoil))) # abundance matrix
+# Transpose the table
+asv_trans_TOP <- as.data.frame(t(otu_mat_TOP))
+asv_trans_TOP <- as.matrix(asv_trans_TOP)
+# Defining site groups: UB, LS, HS1, HS2
+head(ps1_phylum_metaTOP$TRAT2)
+groups4_TOP <- as.factor(ps1_phylum_metaTOP$TRAT2)
 
+indval_TOP <- indicspecies::multipatt(asv_trans_TOP, groups4_TOP, control = how(nperm=999))
+summary(indval_TOP, indvalcomp=TRUE)
+
+# Genus
 ps1_genus_metaTOP <- as(sample_data(ps1_genus_topsoil), "data.frame") # metadata
 otu_mat_TOP <- as.data.frame(as.matrix(otu_table(ps1_genus_topsoil))) # abundance matrix
 # Transpose the table
@@ -1425,6 +1444,7 @@ set.seed(321)
 indval_TOP <- indicspecies::multipatt(asv_trans_TOP, groups4_TOP, control = how(nperm=999))
 summary(indval_TOP, indvalcomp=TRUE)
 
+#Extract significant indicator taxa and link to taxonomy
 indval_df_TOP <- data.frame(ASV = rownames(indval_TOP$sign), indval_TOP$sign)
 df_tax_top <-  as.data.frame((tax_table(ps1_genus_topsoil)))
 df_tax_top <- df_tax_top %>% 
@@ -1436,16 +1456,28 @@ sig_TOP_ind <- indicator_with_taxTOP %>%
   dplyr::filter(p.value <= 0.05) 
 
 # Relative abundance per fire severity
-ps1_genus_topsoil_rel <- transform_sample_counts(ps1_genus_topsoil, function(x) x / sum(x))
-
+ps1_genus_topsoil_rel <- transform_sample_counts(ps1_genus_topsoil, function(x) x / sum(x)) ## Relative abundance PER SAMPLE. Each sample’s abundances now sum to 1 (or 100%)
 df_rel_top <- psmelt(ps1_genus_topsoil_rel) 
 df_rel_top$ASV <- df_rel_top$OTU
 
-abund_perc_top <- df_rel_top %>%      ######## REVISAR
+abund_perc_top <- df_rel_top %>%      ## Aggregation by fire severity
   dplyr::group_by(TRAT2, ASV) %>%
   dplyr::summarise(mean_abundance = mean(Abundance), .groups = "drop") %>%
   dplyr::mutate(percent = 100 * mean_abundance)
 
+#######
+trial <- df_rel_top %>%
+  dplyr::group_by(OTU) %>%
+  dplyr::summarise(Abundance = sum(Abundance), .groups = "drop") %>%
+  dplyr::mutate(Abundance = Abundance / sum(Abundance))
+abund_perc_top <- df_rel_top %>%
+  dplyr::mutate(percent = 100 * Abundance)
+TOP_abundances_0 <- left_join(plot_data_top, abund_perc_top, by = c("ASV"))
+
+
+##########
+
+#Match indicator taxa with their abundances
 plot_data_top <- sig_TOP_ind %>%
   pivot_longer(cols = starts_with("s."), names_to = "TRAT2", values_to = "Presence") %>%
   dplyr::filter(Presence == 1) %>%
@@ -1457,7 +1489,8 @@ TOP_abundances <- left_join(plot_data_top, abund_perc_top, by = c("ASV", "TRAT2"
 
 ## BUBBLE PLOT
 TOP_abundances <- TOP_abundances %>%
-  dplyr::filter(percent > 2) 
+  dplyr::filter(percent > 5) 
+  #dplyr::filter(stat > 0.5)
   
 TOP_abundances %>%
   dplyr::group_by(TRAT2) %>%
@@ -1465,34 +1498,51 @@ TOP_abundances %>%
 
 TOP_abundances$TRAT2 <- ordered(TOP_abundances$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
 
-ggplot(TOP_abundances, aes(x = stat, y = Genus, color = stat)) +
+b1 <- ggplot(TOP_abundances, aes(x = stat, y = Genus, color = stat)) +
   geom_segment(aes(x = 0, xend = stat, y = Genus, yend = Genus),
-               color = "grey70", linewidth = 0.8, alpha = 0.8) +
-  geom_point(size = 3, alpha = 0.5) +
+               color = "grey30", linetype = "dashed", linewidth = 0.5, alpha = 0.6) +
+  geom_point(aes(size = percent, color=stat), alpha=0.7) +
+  scale_size_continuous(name = "Mean relative abundance (%)")+
   scale_color_viridis_c(option = "C", direction = -1, name = "IndVal") +
-  facet_wrap(~TRAT2, nrow = 1) +
   labs(
     x = "Indicator Value (IndVal)",
     y = "Genus",
     title = "Indicator Genera by Fire Severity (Topsoil)"
   ) +
-  theme_minimal(base_size = 13) +
+  theme_minimal() +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    strip.text = element_text(face = "bold"),
-    panel.grid.major = element_line(color = "grey80"),
-    panel.grid.minor = element_line(color = "grey90"),
-    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
-    axis.text.y = element_text(size = 9)
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    strip.placement = "outside",  # Place strip labels outside the plot
+    legend.position = "none",
+    #strip.background = element_blank()  # Remove strip background
   ) +
   scale_y_discrete() +
-  scale_x_continuous(expand = expansion(mult = c(0.2, 0.2)))
-#ggsave("SUPP_bubbles_indspecies_TOP.png", width = 9, height = 8, dpi = 300) #### FIGURE 5a ####
-
+  scale_x_continuous(expand = expansion(mult = c(-0.7, 0.05))) +
+  facet_wrap(~TRAT2, nrow = 1)
+#ggsave("bubbles_indspecies_TOP.png", width = 8, height = 5, dpi = 300) #### FIGURE 5a ####
 ```
 
 ```{r Species Indicator Analysis: SUBSOIL}
-# SUBSOIL
+# Phylum
+ps1_phylum_metaSUB <- as(sample_data(ps1_phylum_subsoil), "data.frame") # metadata
+otu_mat_SUB <- as.data.frame(as.matrix(otu_table(ps1_phylum_subsoil))) # abundance matrix
+# Transpose the table
+asv_trans_SUB <- as.data.frame(t(otu_mat_SUB))
+asv_trans_SUB <- as.matrix(asv_trans_SUB)
+# Defining site groups: UB, LS, HS1, HS2
+head(ps1_phylum_metaSUB$TRAT2)
+groups4_SUB <- as.factor(ps1_phylum_metaSUB$TRAT2)
+
+#set.seed(321)
+indval_SUB <- indicspecies::multipatt(asv_trans_SUB, groups4_SUB, control = how(nperm=999))
+summary(indval_SUB, indvalcomp=TRUE)
+
+#GENUS
 ps1_genus_metaSUB <- as(sample_data(ps1_genus_subsoil), "data.frame") # metadata
 otu_mat_SUB <- as.data.frame(as.matrix(otu_table(ps1_genus_subsoil))) # abundance matrix
 # Transpose the table
@@ -1536,36 +1586,47 @@ plot_data_sub$TRAT2 <- factor(plot_data_sub$TRAT2, ordered =FALSE)
 
 SUB_abundances <- left_join(plot_data_sub, abund_perc_sub, by = c("ASV", "TRAT2"))
 
+vista <- SUB_abundances %>% dplyr::filter(ASV =="ASV_73")
+
 ## BUBBLE PLOT
 SUB_abundances <- SUB_abundances %>%
-  dplyr::filter(percent > 2)
+  dplyr::filter(percent > 5)
 
 SUB_abundances$TRAT2 <- ordered(SUB_abundances$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
 
-ggplot(SUB_abundances, aes(x = stat, y = Genus, color = stat)) +
+b2 <- ggplot(SUB_abundances, aes(x = stat, y = Genus, color = stat)) +
   geom_segment(aes(x = 0, xend = stat, y = Genus, yend = Genus),
-               color = "grey70", linewidth = 0.8, alpha = 0.8) +
-  geom_point(size = 3, alpha = 0.5) +
+               color = "grey30", linetype = "dashed", linewidth = 0.5, alpha = 0.6) +
+  geom_point(aes(size = percent, color = stat), alpha=0.7) +
+  scale_size_continuous(name = "Mean relative abundance (%)")+
   scale_color_viridis_c(option = "C", direction = -1, name = "IndVal") +
-  facet_wrap(~TRAT2, nrow = 1) +
   labs(
     x = "Indicator Value (IndVal)",
     y = "Genus",
     title = "Indicator Genera by Fire Severity (Subsoil)"
   ) +
-  theme_minimal(base_size = 13) +
+  theme_minimal() +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    strip.text = element_text(face = "bold"),
-    panel.grid.major = element_line(color = "grey80"),
-    panel.grid.minor = element_line(color = "grey90"),
-    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
-    axis.text.y = element_text(size = 9)
+    panel.border = element_rect(colour = "black", fill = NA),
+    #panel.grid = element_blank(),
+    #panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    strip.placement = "outside",  # Place strip labels outside the plot
+    legend.position = "none",
+    #strip.background = element_blank()  # Remove strip background
   ) +
-  scale_y_discrete() +
-  scale_x_continuous(expand = expansion(mult = c(0.2, 0.2)))
-
+  #scale_y_discrete() +
+  scale_x_continuous(expand = expansion(mult = c(-0.7, 0.05))) +
+  facet_wrap(~TRAT2, nrow = 1)
 #ggsave("SUPP_bubbles_indspecies_SUBx.png", width = 6, height = 4, dpi = 300) #### FIGURE 5b ####
+```
+
+```{r Combined topsoil & subsoil Indicator Species}
+combined_plot <- b1 + b2 + plot_layout(ncol = 2, widths = c(2, 2))
+combined_plot
+ggsave("combined_indic2.png", combined_plot, width = 10, height = 4.2, dpi = 300)
 ```
 
 ```{r Venn Diagram}
@@ -1594,7 +1655,7 @@ names(venn_list_top) <- otu_by_TOP$TRAT2
 
 venn.diagram(
   x = venn_list_top,
-  filename = "TOPSOIL_ind_venn_diagramm.png",
+  filename = "00.png",
   output=TRUE, 
   fill = c("#41b6c4","#fd8d3c","#cb181d","#800026"),  
   alpha = 0.6,
@@ -1646,89 +1707,162 @@ plot_net(ps1,color="TRAT2")
 
 ```
 
-```{r Canonical Correspondence Analysis}
-#TOPSOIL
-otu_cca_top <- t(as.data.frame(otu_table(ps_hel_topsoil)))
-meta_cca_top <- data.frame(sample_data(ps_hel_topsoil))
+```{r RDA TOPSOIL}
+otu_rda_top <- t(as.data.frame(otu_table(ps_hel_topsoil)))
+meta_rda_top <- data.frame(sample_data(ps_hel_topsoil))
 
-meta_cca_top <- meta_cca_top %>% 
+meta_rda_top <- meta_rda_top %>% 
   dplyr::mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
          C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
+#Matrix with explanatory variables
+rda_explanatory <- meta_rda_top[,c("pH", "EC", "C_N_ratio",
+              "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", 
+              "NH4_mgL_105","NO3_mgL_105", 
+              "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
+              "Nitrogen_stock_Mg_ha", "SOM_per_corregido", "MBC_mg_kg_105",
+              "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
+              "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")]
 
-cca_result_top <- vegan::cca(otu_cca_top ~ pH+EC+C_N_ratio+
-              A_phosphorus_ppm_105+Phosphatase_activity_µmol_g_h+ 
-              NH4_mgL_105+NO3_mgL_105+Ntotal_g_100g_105+
-              Ctotal_g_100g_105+Carbon_stock_Mg_ha+Nitrogen_stock_Mg_ha+
-              SOM_per_corregido+MBC_mg_kg_105+Nematode_g_105+Ca_g_kg+
-              K_g_kg+Mg_g_kg+Na_g_kg+Al_g_kg+Fe_g_Kg+Zn_mg_Kg_105+Cu_mg_Kg_105, data= meta_cca_top)
-summary(cca_result_top)
-autoplot(cca_result_top, scaling="species")
+#alpha_fung_top <- alpha_fungi %>% filter(DEPTH=="topsoil")
+# Run the RDA
+rda_model_top <- rda(otu_rda_top ~ .,
+                 data = rda_explanatory)
+summary(rda_model_top)
+#plot(rda_model, scaling = 2)
 
-#Plot:
-cca_top <- fortify(cca_result_top, axes = 1:2)  
-sites_top <- cca_top %>% dplyr::filter(score == "sites")
-species_top <- cca_top %>% dplyr::filter(score == "species")
-biplot_top <- cca_top %>% dplyr::filter(score == "biplot")
+anova(rda_model_top)               # Overall significance
 
-ggplot() +
-  geom_point(data = sites_top, aes(x = CCA1, y = CCA2, color = meta_cca_top$TRAT2), size = 3) +
+anova_terms <- anova(rda_model_top, by = "terms") # Variable significance
+sig_vars <- rownames(anova_terms)[anova_terms$`Pr(>F)` < 0.05]
+sig_vars
+
+## extract % explained by the first 2 axes
+perc <- round(100*(summary(rda_model_top)$cont$importance[2, 1:2]), 2)
+## extract scores - these are coordinates in the RDA space
+sc_si <- vegan::scores(rda_model_top, display="sites", choices=c(1,2), scaling=1) %>% as.data.frame
+sc_bp <- vegan::scores(rda_model_top, display="bp", choices=c(1, 2), scaling=1)  %>% as.data.frame
+sc_bp <- sc_bp[sig_vars, ,drop=FALSE]
+sc_bp$Variable <- rownames(sc_bp)
+
+rownames(sc_si) == rownames(meta_rda_top)
+sc_si$Variable <- rownames(sc_si)
+RDA <- cbind(meta_rda_top, sc_si)
+
+sc_bp_scaled <- sc_bp
+sc_bp_scaled$RDA1 <- sc_bp_scaled$RDA1 * 2
+sc_bp_scaled$RDA2 <- sc_bp_scaled$RDA2 * 2
+
+h1 <- ggplot(RDA, aes(x = RDA1, y = RDA2, color = TRAT2)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_point(size = 5, alpha = 0.7) +
   scale_color_manual(values = cols) +
-  geom_segment(data = biplot_top,
-               aes(x = 0, y = 0, xend = CCA1, yend = CCA2),
-               arrow = arrow(length = unit(0.25, "cm")), color = "blue") +
-  geom_text(data = biplot_top,
-            aes(x = CCA1, y = CCA2, label = label),
-            color = "blue", vjust = -0.5, size = 3) +
-  theme_minimal() +
-  theme(legend.position = "none") +
-  labs(x = "CCA1", y = "CCA2", color = "TRAT2")
-#ggsave("cca_top.png")
-
-#SUBSOIL
-otu_cca_sub <- t(as.data.frame(otu_table(ps_hel_subsoil)))
-meta_cca_sub <- data.frame(sample_data(ps_hel_subsoil))
-
-meta_cca_sub <- meta_cca_sub %>% 
-  dplyr::mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
-         Ergosterol_µg_g = Ergosterol_ng_g_105/1000,
-         C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
-
-cca_result_sub <- vegan::cca(otu_cca_sub ~ pH+EC+densidad_revisada_25+C_N_ratio+
-              A_phosphorus_ppm_105+Phosphatase_activity_µmol_g_h+ 
-              NH4_mgL_105+NO3_mgL_105+Ergosterol_µg_g+Ntotal_g_100g_105+
-              Ctotal_g_100g_105+Carbon_stock_Mg_ha+Nitrogen_stock_Mg_ha+
-              SOM_per_corregido+MBC_mg_kg_105+Nematode_g_105+Ca_g_kg+
-              K_g_kg+Mg_g_kg+Na_g_kg+Al_g_kg+Fe_g_Kg+Zn_mg_Kg_105+Cu_mg_Kg_105*TRAT2, data= meta_cca_sub)
-summary(cca_result_sub)
-autoplot(cca_result_sub, scaling="species")
+  geom_segment(data = sc_bp_scaled,
+               aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
+               arrow = arrow(length = unit(0.25, "cm")),
+               color = "grey10",
+               inherit.aes = FALSE) +
+  
+  coord_fixed(
+    xlim = range(c(sc_si$RDA1, sc_bp_scaled$RDA1)) ,
+    ylim = range(c(sc_si$RDA2, sc_bp_scaled$RDA2)) 
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid = element_blank(),
+    legend.position = "none",
+    axis.title = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  ) +
+  labs(
+    title = "Triplot RDA (scaling 1)",
+    x = paste0("RDA1 (", perc[1], "%)"),
+    y = paste0("RDA2 (", perc[2], "%)"),
+    color = "Fire severity"
+  )
+#ggsave("RDA_TOPSOIL2.png")
 ```
 
+```{r RDA SUBSOIL}
+otu_rda_sub <- t(as.data.frame(otu_table(ps_hel_subsoil)))
+meta_rda_sub <- data.frame(sample_data(ps_hel_subsoil))
 
-```{r Ergosterol}
-alpha_fungi$TRAT2 <- factor(alpha_fungi$TRAT2, levels = c("UB", "LS", "HS1", "HS2") )
-alpha_fungi$DEPTH <- factor(alpha_fungi$DEPTH, levels = c("topsoil","subsoil"))
+meta_rda_sub <- meta_rda_sub %>% 
+  dplyr::mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
+         C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
+#Matrix with explanatory variables
+rda_explanatory <- meta_rda_sub[,c("pH", "EC", "C_N_ratio",
+              "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", 
+              "NH4_mgL_105","NO3_mgL_105", 
+              "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
+              "Nitrogen_stock_Mg_ha", "SOM_per_corregido", "MBC_mg_kg_105",
+              "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
+              "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")]
 
-alpha_fungi$MBC_mg_kg_105
+#alpha_fung_sub <- alpha_fungi %>% filter(DEPTH=="subsoil")
+# Run the RDA
+rda_model <- rda(otu_rda_sub ~ ., data = rda_explanatory)
+summary(rda_model)
+plot(rda_model, scaling = 2)
+ordiplot(rda_model, scaling = 1)
 
-ggplot(alpha_fungi, aes(x = (log(alpha_fungi$MBC_mg_kg_105)+1), y = observed , color = TRAT2)) +
-  geom_point(size = 4, alpha = 0.7) +
-  scale_color_manual(values = cols) + 
-  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "dashed") +
-  theme_minimal()+
-    theme(
-    #legend.position = "none",
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.line = element_line(color = "black"),
-    axis.text = element_text(color = "black"),
-    axis.ticks = element_line(color = "black"),
-    strip.placement = "outside",  # Place strip labels outside the plot
-    strip.background = element_blank()  # Remove strip background
+anova(rda_model)               # Overall significance
+anova_terms <- anova(rda_model, by = "terms") # Variable significance
+sig_vars <- rownames(anova_terms)[anova_terms$`Pr(>F)` < 0.05]
+sig_vars
+anova(rda_model, by = "terms")
+# Custom triplot code!
+
+## extract % explained by the first 2 axes
+perc <- round(100*(summary(rda_model)$cont$importance[2, 1:2]), 2)
+## extract scores - these are coordinates in the RDA space
+sc_si <- vegan::scores(rda_model, display="sites", choices=c(1,2), scaling=1) %>% as.data.frame
+sc_bp <- vegan::scores(rda_model, display="bp", choices=c(1, 2), scaling=1)  %>% as.data.frame
+sc_bp <- sc_bp[sig_vars, ,drop=FALSE]
+sc_bp$Variable <- rownames(sc_bp)
+
+rownames(sc_si) == rownames(meta_rda_sub)
+RDA <- cbind(meta_rda_sub, sc_si)
+
+sc_bp_scaled <- sc_bp
+sc_bp_scaled$RDA1 <- sc_bp_scaled$RDA1 * 2
+sc_bp_scaled$RDA2 <- sc_bp_scaled$RDA2 * 2
+
+h2 <- ggplot(RDA, aes(x = RDA1, y = RDA2, color = TRAT2)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_point(size = 5, alpha = 0.7) +
+  scale_color_manual(values = cols) +
+  geom_segment(data = sc_bp_scaled,
+               aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
+               arrow = arrow(length = unit(0.25, "cm")),
+               color = "grey10",
+               inherit.aes = FALSE) +
+ 
+  coord_fixed(
+    xlim = range(c(sc_si$RDA1, sc_bp_scaled$RDA1)) ,
+    ylim = range(c(sc_si$RDA2, sc_bp_scaled$RDA2)) 
   ) +
-  facet_wrap(~DEPTH)
-  #scale_x_reverse()
-#ggsave("observed_MBC.png")
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid = element_blank(),
+    legend.position = "none",
+    axis.title = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  ) +
+  labs(
+    title = "Triplot RDA (scaling 1)",
+    x = paste0("RDA1 (", perc[1], "%)"),
+    y = paste0("RDA2 (", perc[2], "%)"),
+    color = "Fire severity"
+  )
+#ggsave("RDA_SUBSOIL.png")
+```
+
+```{r}
+combined_plot <- h1 + h2 + plot_layout(ncol = 1, heights = c(3, 2))
+combined_plot
+ggsave("combined_RDA.png", width = 5, height = 8, dpi = 300)
 ```
 
 ############################ EXTRA ##############################################
