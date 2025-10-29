@@ -162,9 +162,9 @@ figure_scatterPlot(file="scatter_trial.png")
 ```
 
 ```{r Data}
-a <- X180_ca_burnt
-b <- X180_ca_control
-c <- X497_nmds_control
+a <- X102_nmds_burnt
+b <- X102_nmds_control
+c <- X474_nmds_control
 d <- X403_2003_10_20
 e <- X403_control_2016_10_20
 f <- X403_control_2015_10_20

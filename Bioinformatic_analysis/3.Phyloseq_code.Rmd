@@ -1234,125 +1234,6 @@ disp_UNI <- betadisper(ordu_unw, (data = as(sample_data(ps1_top), "data.frame")$
 anova(disp_UNI)
 ```
 
-```{r RandomForest} 
-# It's a regression formula. We should have a data.frame were the first column is the response variable and the remaining columns are the predictor variables
-for_RF <- alpha_fungi %>% 
-  mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
-         C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
-
-RF_vars <- c("observed", "pH", "EC", "C_N_ratio",
-              "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", 
-              "NH4_mgL_105","NO3_mgL_105", 
-              "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
-              "Nitrogen_stock_Mg_ha", "SOM_per_corregido", "MBC_mg_kg_105",
-              "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
-              "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")
-
-for_RF <- for_RF %>% filter(DEPTH=="subsoil")
-
-RF_indicators <- for_RF %>%
-  dplyr::select(all_of(RF_vars))
-
-# 2) Create the 6 "soil function" categories with their mean and standard error: 
-RF_functions_calc <- for_RF %>%
-  dplyr::group_by(SampleID,TRAT2, DEPTH) %>% #We need to include ID because we want an individual value of Soil Function per sample
-  dplyr::mutate(
-    Soil_properties = mean(c(pH, EC), na.rm = TRUE),
-    Soil_fertility = mean(c(A_phosphorus_ppm_105, NH4_mgL_105, NO3_mgL_105, Ntotal_g_100g_105, Nitrogen_stock_Mg_ha, C_N_ratio,  Ca_g_kg, K_g_kg, Mg_g_kg, Na_g_kg), na.rm = TRUE),
-    Carbon_sequestration = mean(c(Ctotal_g_100g_105, SOM_per_corregido, Carbon_stock_Mg_ha), na.rm = TRUE),
-    Nutrient_cycling = mean(c(Phosphatase_activity_µmol_g_h, MBC_mg_kg_105), na.rm = TRUE),
-    Metals = mean(c(Al_g_kg, Cu_mg_Kg_105, Fe_g_Kg, Zn_mg_Kg_105), na.rm = TRUE),
-    Soil_biodiversity = mean(c(Nematode_g_105), na.rm = TRUE))
-
-functions <- c("observed", "Soil_properties", "Soil_fertility", "Carbon_sequestration", "Nutrient_cycling", "Metals", "Soil_biodiversity")
-
-RF_functions <- RF_functions_calc %>%
-  dplyr::select(all_of(functions)) %>%
-  dplyr::filter(DEPTH=="subsoil")
-
-RF_functions <- RF_functions[,4:10]
-
-data <- RF_indicators
-data <- data %>% #This implies that column ncol(data) is the response variable
-  dplyr::select(ncol(data), everything())
-#Model training
-set.seed(12)
-RFfit<- randomForest(observed ~ ., data=data, ntree=300, importance=T) # necesario importance=T para guardar el valor de las importancias
-summary(RFfit)
-#Error plot
-plot(RFfit)
-
-#Variable importance
-importance_matrix <- importance(RFfit)
-incMSE_values <- importance_matrix[, "%IncMSE"]
-
-#png("RFfit_plot.png", width = 800, height = 600)
-varImpPlot(RFfit)
-#dev.off()
-#incMSE indica el error por permutacion
-#incNodePurity indica la capacidad de esa variable para separar nodos
-
-# Convertir a dataframe
-incMSE_df <- data.frame(Variable = rownames(importance_matrix),
-                        IncMSE = importance_matrix[, "%IncMSE"])
-# Ordenar las variables de mayor a menor incremento en el MSE
-incMSE_df <- incMSE_df[order(incMSE_df$IncMSE, decreasing = TRUE), ]
-# Ver los resultados
-print(incMSE_df)
-
-ggplot(incMSE_df, aes(x = reorder(Variable, IncMSE), y = IncMSE, fill = IncMSE)) +
-  geom_col() +
-  coord_flip() +
-  theme_minimal() +
-  theme(
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.line = element_line(color = "black"),
-    axis.text = element_text(color = "black"),
-    axis.ticks = element_line(color = "black"),
-    strip.placement = "outside",  # Place strip labels outside the plot
-    strip.background = element_blank()  # Remove strip background
-  )
-#ggsave("RandomForest_SUBSOIL2.png", height = 5, width = 6, dpi = 300)
-```
-
-```{r rfPermute}
-#If we need statistical significance, we will use the rfPermute package (same base as RandomForest)
-#set.seed(8)
-rp <- rfPermute(observed ~ ., data=data, ntree = 300, num.rep = 1000, num.cores = 6)
-importance_matrix <- importance(rp)
-plotImportance(rp)
-summary(rp)
-
-incMSE_df <- data.frame(Variable = rownames(importance_matrix),
-                        IncMSE = importance_matrix[, "%IncMSE"],
-                        pvalueIncMSE = importance_matrix[,"%IncMSE.pval"])
-
-incMSE_df$pvalueIncMSE <- ifelse(incMSE_df$pvalueIncMSE < 0.05, "Significant", "Not Significant")
-
-incMSE_df <- incMSE_df[order(incMSE_df$IncMSE, decreasing = TRUE), ]
-# Ver los resultados
-print(incMSE_df)
-
-ggplot(incMSE_df, aes(x = reorder(Variable, IncMSE), y = IncMSE, fill= pvalueIncMSE)) +
-  geom_col() +
-  scale_fill_manual(values=c("#969696", "#4d004b"))+
-  #scale_fill_viridis(option="D",direction = -1) +
-  coord_flip() +
-  theme_minimal() +
-  theme(
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.line = element_line(color = "black"),
-    axis.text = element_text(color = "black"),
-    axis.ticks = element_line(color = "black"),
-    strip.placement = "outside",  # Place strip labels outside the plot
-    strip.background = element_blank()  # Remove strip background
-  )
-#ggsave("rfPermute_SUBSOIL.png", height = 5, width = 6, dpi = 300)
-```
 *We've run all these analysis with the raw data and the Hellinger transformed data and results are practically the same*
 Species are chosen as indicators if they:
 
@@ -1723,12 +1604,11 @@ rda_explanatory <- meta_rda_top[,c("pH", "EC", "C_N_ratio",
               "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
               "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")]
 
-#alpha_fung_top <- alpha_fungi %>% filter(DEPTH=="topsoil")
 # Run the RDA
 rda_model_top <- rda(otu_rda_top ~ .,
                  data = rda_explanatory)
 summary(rda_model_top)
-#plot(rda_model, scaling = 2)
+plot(rda_model_top, scaling = 2)
 
 anova(rda_model_top)               # Overall significance
 
@@ -1799,15 +1679,14 @@ rda_explanatory <- meta_rda_sub[,c("pH", "EC", "C_N_ratio",
               "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
               "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")]
 
-#alpha_fung_sub <- alpha_fungi %>% filter(DEPTH=="subsoil")
 # Run the RDA
 rda_model <- rda(otu_rda_sub ~ ., data = rda_explanatory)
 summary(rda_model)
 plot(rda_model, scaling = 2)
-ordiplot(rda_model, scaling = 1)
 
 anova(rda_model)               # Overall significance
 anova_terms <- anova(rda_model, by = "terms") # Variable significance
+anova_terms
 sig_vars <- rownames(anova_terms)[anova_terms$`Pr(>F)` < 0.05]
 sig_vars
 anova(rda_model, by = "terms")
@@ -1859,12 +1738,191 @@ h2 <- ggplot(RDA, aes(x = RDA1, y = RDA2, color = TRAT2)) +
 #ggsave("RDA_SUBSOIL.png")
 ```
 
-```{r}
+```{r Combined RDA plots}
 combined_plot <- h1 + h2 + plot_layout(ncol = 1, heights = c(3, 2))
 combined_plot
 ggsave("combined_RDA.png", width = 5, height = 8, dpi = 300)
 ```
 
+```{r MODELS: soil physicochemical variables on richness}
+#TOPSOIL
+alpha_fungi_top <- alpha_fungi %>% filter(DEPTH=="topsoil")
+rownames(alpha_fung_top) = alpha_fung_top$SampleID
+alpha_fungi_top <- alpha_fungi_top %>% 
+  dplyr::mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
+         C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
+
+phychem_lmTOP <- lm(observed ~ pH+ EC+ C_N_ratio+
+              A_phosphorus_ppm_105+ Phosphatase_activity_µmol_g_h+ 
+              NH4_mgL_105+NO3_mgL_105+ 
+              Ntotal_g_100g_105+ Ctotal_g_100g_105+ Carbon_stock_Mg_ha+
+              Nitrogen_stock_Mg_ha+ SOM_per_corregido+ MBC_mg_kg_105+
+              Nematode_g_105+ Ca_g_kg+ K_g_kg+Mg_g_kg+ Na_g_kg+ 
+              Al_g_kg+ Fe_g_Kg+Zn_mg_Kg_105+ Cu_mg_Kg_105, data=alpha_fungi_top)
+summary(phychem_lmTOP)
+
+step(lm(observed ~ pH+ EC+ C_N_ratio+
+              A_phosphorus_ppm_105+ Phosphatase_activity_µmol_g_h+ 
+              NH4_mgL_105+NO3_mgL_105+ 
+              Ntotal_g_100g_105+ Ctotal_g_100g_105+ Carbon_stock_Mg_ha+
+              Nitrogen_stock_Mg_ha+ SOM_per_corregido+ MBC_mg_kg_105+
+              Nematode_g_105+ Ca_g_kg+ K_g_kg+Mg_g_kg+ Na_g_kg+ 
+              Al_g_kg+ Fe_g_Kg+Zn_mg_Kg_105+ Cu_mg_Kg_105, data=alpha_fungi_top), direction="both")
+
+phychem_lmTOP <- lm(observed ~ pH + A_phosphorus_ppm_105 + NH4_mgL_105 + 
+    MBC_mg_kg_105 + K_g_kg + Mg_g_kg + Al_g_kg, data = alpha_fungi_top)
+(summary(phychem_lmTOP)$r.squared)
+
+#SUBSOIL
+alpha_fungi_sub <- alpha_fungi %>% filter(DEPTH=="subsoil")
+rownames(alpha_fungi_sub) = alpha_fungi_sub$SampleID
+alpha_fungi_sub <- alpha_fungi_sub %>% 
+  dplyr::mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
+         C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
+
+phychem_lmSUB <- lm(observed ~ pH+ EC+ C_N_ratio+
+              A_phosphorus_ppm_105+ Phosphatase_activity_µmol_g_h+ 
+              NH4_mgL_105+NO3_mgL_105+ 
+              Ntotal_g_100g_105+ Ctotal_g_100g_105+ Carbon_stock_Mg_ha+
+              Nitrogen_stock_Mg_ha+ SOM_per_corregido+ MBC_mg_kg_105+
+              Nematode_g_105+ Ca_g_kg+ K_g_kg+Mg_g_kg+ Na_g_kg+ 
+              Al_g_kg+ Fe_g_Kg+Zn_mg_Kg_105+ Cu_mg_Kg_105, data=alpha_fungi_sub)
+summary(phychem_lmSUB)
+
+step(lm(observed ~ pH+ EC+ C_N_ratio+
+              A_phosphorus_ppm_105+ Phosphatase_activity_µmol_g_h+ 
+              NH4_mgL_105+NO3_mgL_105+ 
+              Ntotal_g_100g_105+ Ctotal_g_100g_105+ Carbon_stock_Mg_ha+
+              Nitrogen_stock_Mg_ha+ SOM_per_corregido+ MBC_mg_kg_105+
+              Nematode_g_105+ Ca_g_kg+ K_g_kg+Mg_g_kg+ Na_g_kg+ 
+              Al_g_kg+ Fe_g_Kg+Zn_mg_Kg_105+ Cu_mg_Kg_105, data=alpha_fungi_sub), direction="both")
+
+phychem_lmSUB <- lm(formula = observed ~ C_N_ratio + A_phosphorus_ppm_105 + Phosphatase_activity_µmol_g_h + 
+    NH4_mgL_105 + MBC_mg_kg_105 + Mg_g_kg + Al_g_kg + Zn_mg_Kg_105, 
+    data = alpha_fungi_sub)
+(summary(phychem_lmTOP)$r.squared)
+
+```
+
+```{r RandomForest} 
+# It's a regression formula. We should have a data.frame were the first column is the response variable and the remaining columns are the predictor variables
+for_RF <- alpha_fungi %>% 
+  mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
+         C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
+
+RF_vars <- c("observed", "pH", "EC", "C_N_ratio",
+              "A_phosphorus_ppm_105", "Phosphatase_activity_µmol_g_h", 
+              "NH4_mgL_105","NO3_mgL_105", 
+              "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
+              "Nitrogen_stock_Mg_ha", "SOM_per_corregido", "MBC_mg_kg_105",
+              "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
+              "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")
+
+for_RF <- for_RF %>% filter(DEPTH=="topsoil")
+
+RF_indicators <- for_RF %>%
+  dplyr::select(all_of(RF_vars))
+
+# 2) Create the 6 "soil function" categories with their mean and standard error: 
+RF_functions_calc <- for_RF %>%
+  dplyr::group_by(SampleID,TRAT2, DEPTH) %>% #We need to include ID because we want an individual value of Soil Function per sample
+  dplyr::mutate(
+    Soil_properties = mean(c(pH, EC), na.rm = TRUE),
+    Soil_fertility = mean(c(A_phosphorus_ppm_105, NH4_mgL_105, NO3_mgL_105, Ntotal_g_100g_105, Nitrogen_stock_Mg_ha, C_N_ratio,  Ca_g_kg, K_g_kg, Mg_g_kg, Na_g_kg), na.rm = TRUE),
+    Carbon_sequestration = mean(c(Ctotal_g_100g_105, SOM_per_corregido, Carbon_stock_Mg_ha), na.rm = TRUE),
+    Nutrient_cycling = mean(c(Phosphatase_activity_µmol_g_h, MBC_mg_kg_105), na.rm = TRUE),
+    Metals = mean(c(Al_g_kg, Cu_mg_Kg_105, Fe_g_Kg, Zn_mg_Kg_105), na.rm = TRUE),
+    Soil_biodiversity = mean(c(Nematode_g_105), na.rm = TRUE))
+
+functions <- c("observed", "Soil_properties", "Soil_fertility", "Carbon_sequestration", "Nutrient_cycling", "Metals", "Soil_biodiversity")
+
+RF_functions <- RF_functions_calc %>%
+  dplyr::select(all_of(functions)) %>%
+  dplyr::filter(DEPTH=="topsoil")
+
+RF_functions <- RF_functions[,4:10]
+
+data <- RF_indicators
+data <- data %>% #This implies that column ncol(data) is the response variable
+  dplyr::select(ncol(data), everything())
+#Model training
+set.seed(12)
+RFfit<- randomForest(observed ~ ., data=data, ntree=300, importance=T) # necesario importance=T para guardar el valor de las importancias
+summary(RFfit)
+#Error plot
+plot(RFfit)
+
+#Variable importance
+importance_matrix <- importance(RFfit)
+incMSE_values <- importance_matrix[, "%IncMSE"]
+
+#png("RFfit_plot.png", width = 800, height = 600)
+varImpPlot(RFfit)
+#dev.off()
+#incMSE indica el error por permutacion
+#incNodePurity indica la capacidad de esa variable para separar nodos
+
+# Convertir a dataframe
+incMSE_df <- data.frame(Variable = rownames(importance_matrix),
+                        IncMSE = importance_matrix[, "%IncMSE"])
+# Ordenar las variables de mayor a menor incremento en el MSE
+incMSE_df <- incMSE_df[order(incMSE_df$IncMSE, decreasing = TRUE), ]
+# Ver los resultados
+print(incMSE_df)
+
+ggplot(incMSE_df, aes(x = reorder(Variable, IncMSE), y = IncMSE, fill = IncMSE)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    strip.placement = "outside",  # Place strip labels outside the plot
+    strip.background = element_blank()  # Remove strip background
+  )
+#ggsave("RandomForest_SUBSOIL2.png", height = 5, width = 6, dpi = 300)
+```
+
+```{r rfPermute}
+#If we need statistical significance, we will use the rfPermute package (same base as RandomForest)
+#set.seed(8)
+rp <- rfPermute(observed ~ ., data=data, ntree = 300, num.rep = 1000, num.cores = 6)
+importance_matrix <- importance(rp)
+plotImportance(rp)
+summary(rp)
+
+incMSE_df <- data.frame(Variable = rownames(importance_matrix),
+                        IncMSE = importance_matrix[, "%IncMSE"],
+                        pvalueIncMSE = importance_matrix[,"%IncMSE.pval"])
+
+incMSE_df$pvalueIncMSE <- ifelse(incMSE_df$pvalueIncMSE < 0.05, "Significant", "Not Significant")
+
+incMSE_df <- incMSE_df[order(incMSE_df$IncMSE, decreasing = TRUE), ]
+# Ver los resultados
+print(incMSE_df)
+
+ggplot(incMSE_df, aes(x = reorder(Variable, IncMSE), y = IncMSE, fill= pvalueIncMSE)) +
+  geom_col() +
+  scale_fill_manual(values=c("#969696", "#4d004b"))+
+  #scale_fill_viridis(option="D",direction = -1) +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    strip.placement = "outside",  # Place strip labels outside the plot
+    strip.background = element_blank()  # Remove strip background
+  )
+#ggsave("rfPermute_SUBSOIL.png", height = 5, width = 6, dpi = 300)
+```
 ############################ EXTRA ##############################################
 
 ```{r Sankey Diagram}
