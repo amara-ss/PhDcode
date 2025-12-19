@@ -168,7 +168,7 @@ dataset_simple <- dataset %>%
   dplyr::select(ID, SITE, TRAT2, DEPTH, all_of(resp_variables))
 
 #Add pc1 values to the dataframe
-dataset_pc1 <- dataset_simple %>%
+dataset_pc1 <- dataset %>%
   dplyr::mutate(pc1 = pc1$pc1)
 ```
 
@@ -1129,6 +1129,9 @@ coordenadas <- coordenadas %>%
 #Add enviromental data
 env_df <- dataset %>%
   dplyr::select(all_of(plot_vars))
+
+class(env_df)
+
 
 env <- envfit(nmds, env_df, permutations = 999, na.rm = TRUE)
 

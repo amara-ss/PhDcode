@@ -18,16 +18,19 @@ output:
 #devtools::install_github("ropenscilabs/datastorr")
 #devtools::install_github("traitecoevo/fungaltraits")
 library(fungaltraits)
+devtools::install_github("brendanf/FUNGuildR", force = TRUE)
 ```
 
 ```{r Uploading FungalTraits database}
 fungal_traits <- fungal_traits() #As we can see, the Genus column is clean. However in our dataset every genus name contains a "g__" as a prefix. In order to match both datasets we need to get rid of that prefix:
 head(fungal_traits)
+
+Polme_2020 <- Polme_2020_FungalTraits
 ```
 
 ```{r}
-vista <- fungal_traits %>%
-  dplyr::filter(Genus=="Linnemannia")
+vista <- Polme_2020 %>%
+  dplyr::filter(GENUS=="Alternaria")
 ```
 
 ```{r Collapse the fungal traits database}
@@ -70,9 +73,17 @@ df_traits_final <- df_combined %>%
   )
 ```
 
+```{r Merging databases with Polme}
+Polme_2020$Genus <- Polme_2020$GENUS
+Polme_2020_a <- Polme_2020[,c(8:26)]
+
+Polme_merged <- df_combined %>%
+  dplyr::left_join(Polme_2020_a, by = "Genus")
+```
+
 ```{r}
-vista <- df_traits_final %>%
-  dplyr::filter(Genus=="Linnemannia")
+vista <- Polme_merged %>%
+  dplyr::filter(Phylum=="p__Mortierellomycota")
 ```
 
 ```{r Evaluation of the confidence level}
@@ -89,13 +100,19 @@ asvs_by_confidence <- df_traits_final %>%
 # Matching Genus level
 asvs_with_traits <- df_combined %>%
   dplyr::filter(!is.na(Genus)) %>%
-  dplyr::filter(Genus %in% unique(fungal_traits_mode$Genus))
+  dplyr::filter(Genus %in% unique(Polme_2020$Genus))
 
 # Number of unique ASVs matching
 n_matching_asvs <- n_distinct(asvs_with_traits$ASV_ID)
 n_total_asvs <- n_distinct(df_combined$ASV_ID)
 
+#Number of unique ASVs with a record for "primery_lifestyle"
+asvs_with_lifestyle <- Polme_merged %>%
+dplyr::filter(!is.na(primary_lifestyle))
+n_matching_lifestyle <- n_distinct(asvs_with_lifestyle$ASV_ID)
+
 cat("Number of ASVs matching with FungalTraits:", n_matching_asvs, "\n")
+cat("ASVs with a primary_lifestyle assignment:", n_matching_lifestyle, "\n")
 cat("Number of total ASVs:", n_total_asvs, "\n")
 
 # Sum of reads matching Genus level traits
@@ -130,7 +147,7 @@ cat("Percentage of matching reads:", matching_reads / total_reads * 100, "%\n") 
 
 ```{r Guild richness}
 # Integrate df_traits_final with metadata
-df_long <- df_traits_final %>%
+df_long <- Polme_merged %>%
   pivot_longer(
     cols = matches("-FIREFUNGI$"),  
     names_to = "SampleID",
@@ -144,42 +161,98 @@ df_long_meta <- df_long %>%
   dplyr::left_join(ps1_genus_metadata %>% 
   dplyr::select(SampleID, PLOT, SITE, TRAT2, DEPTH), by = "SampleID")
 
+df_long_meta <- df_long_meta %>%
+  dplyr::mutate(Presence = ifelse(Abundance > 0, 1, 0))
+
+
 ### DOES GUILD RICHNESS VARY ACROSS FIRE SEVERITY AND DEPTH? We need a richness number per sample (must include SampleID)
-richness_guild_df <- df_long_meta %>%
-  dplyr::group_by(SampleID, SITE, TRAT2, DEPTH) %>%
-  dplyr::summarise(Richness = n_distinct(guild_fg), .groups = "drop")
+# Compute richness (number of unique taxa) per guild, per fire severity, per depth
+richness_per_sample <- df_long_meta %>%
+  dplyr::group_by(SampleID, TRAT2, DEPTH, primary_lifestyle) %>%
+  dplyr::summarise(Richness = sum(Presence), .groups = "drop")
 
-richness_guild_df$DEPTH <- ordered(richness_guild_df$DEPTH, levels=c("topsoil", "subsoil"))
+guild_richness_summary <- richness_per_sample %>%
+  dplyr::group_by(TRAT2, DEPTH, primary_lifestyle) %>%
+  dplyr::summarise(
+    MeanRichness = mean(Richness),
+    SDRichness   = sd(Richness),
+    se = sd(Richness)/sqrt(n()),
+    N = n(),
+    .groups = "drop"
+  )
 
-ggplot(richness_guild_df, aes(x = TRAT2, y = Richness, fill = TRAT2, color=TRAT2)) +
-  geom_jitter(width = 0.2, size = 2) +
-  geom_boxplot(alpha = 0.3) +
-  scale_fill_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) +
-  scale_color_manual(values = c("#1d91c0","#feb24c","#cb181d","#800026")) +
-  labs(
-    x = "Fire severity",
-    y = "Nº unique guilds"
-  ) +
+vista <- guild_richness_summary %>% dplyr::filter(primary_lifestyle=="unspecified_saprotroph")
+
+### MODELS
+richness_per_sampleTOP <- richness_per_sample %>% dplyr::filter(DEPTH=="topsoil")
+richness_per_sampleSUB <- richness_per_sample %>% dplyr::filter(DEPTH=="subsoil")
+
+glm_results <- glm(
+      Richness ~ TRAT2,
+      family = poisson,
+      data = filter(richness_per_sampleTOP, primary_lifestyle == "unspecified_saprotroph"))
+
+performance::check_overdispersion(
+  glm(Richness ~ TRAT2, family = poisson,
+      data = filter(richness_per_sampleTOP,
+                    primary_lifestyle == "unspecified_saprotroph"))
+)
+
+Anova(glm_results, type="II")
+
+posthoc <- glm.nb(Richness ~ TRAT2,
+                data = filter(richness_per_sampleTOP,
+                primary_lifestyle == "unspecified_saprotroph")
+)
+
+multcomp::cld(emmeans(posthoc, ~TRAT2, type="response"), Letters=letters)
+
+### PLOT
+selected_guilds$TRAT2 <- ordered(selected_guilds$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
+selected_guilds$DEPTH <- ordered(selected_guilds$DEPTH, levels=c("topsoil", "subsoil"))
+
+selected_guilds <- guild_richness_summary %>%
+  filter(primary_lifestyle %in% c("ectomycorrhizal", "unspecified_saprotroph", "soil_saprotroph", "litter_saprotroph"))
+  
+ggplot(selected_guilds, aes(x = TRAT2, y = MeanRichness, color = primary_lifestyle, group = primary_lifestyle)) +
+  geom_point(size = 3.5, alpha=.6, position = position_dodge(width = 0.3)) +
+  scale_color_manual(values = c("#DD1C77","#8c6bb1","#6baed6", "#0570b0")) +
+  geom_line(position = position_dodge(width = 0.3)) +
+  geom_errorbar(aes(ymin = MeanRichness - SDRichness, ymax = MeanRichness + SDRichness),
+                width = 0.1, position = position_dodge(width = 0.3)) +
+  facet_wrap(~DEPTH) +
+  labs(x = "Fire severity", y = "Mean ASV richness", color = "Guild") +
   theme_minimal()+
-  theme(
+    theme(
     panel.background = element_blank(),
     panel.border = element_rect(colour = "black", fill = NA),
     panel.grid = element_blank(),
     axis.text.x = element_text(size = 14),  # Change this value as needed
-    axis.text.y = element_text(size = 14),
-    legend.position = "none"
-  ) +
-  facet_wrap(~DEPTH, scales="free_x")
-#ggsave("functional_guild_richness.png")
+    axis.text.y = element_text(size = 14)
+    #legend.position = "none"
+  )
+#ggsave("guild_richness.png")
 
-hist(richness_guild_df$Richness)
-leveneTest(Richness ~ TRAT2 * DEPTH, data = richness_guild_df) #We can assume homogeneity of variance
-# If assumptions met → 2-way ANOVA:
-rich_aov <- aov(Richness ~ TRAT2 * DEPTH, data = richness_guild_df)
-summary(rich_aov)
+```
 
-rich_lmer <- lmer(Richness ~ TRAT2 * DEPTH + (1|SITE), data = richness_guild_df)
-anova(rich_lmer)
+```{r Prep: guild richness for SEM}
+richness_wide <- richness_per_sample %>%
+  pivot_wider(
+    names_from  = primary_lifestyle,
+    values_from = Richness,
+    values_fill = 0
+  )
+
+richness_wide_df  <- richness_per_sample %>%
+  dplyr::group_by(SampleID, TRAT2, DEPTH) %>%
+  dplyr::summarise(
+    ECM_richness  = sum(Richness[primary_lifestyle == "ectomycorrhizal"], na.rm = TRUE),
+    LSp_richness = sum(Richness[primary_lifestyle == "litter_saprotroph"], na.rm = TRUE),
+    USp_richness  = sum(Richness[primary_lifestyle == "unspecified_saprotroph"], na.rm = TRUE),
+    .groups = "drop"
+  )
+
+guild_richness_SEM <- left_join(richness_wide_df, metadata_df, by = c("SampleID", "TRAT2", "DEPTH"))
 ```
 
 ```{r Relative guild abundance per fire severity}
@@ -195,7 +268,7 @@ df_rel %>% ## Just to make sure the sum of rel abundances per sample = 1
 
 ## Relative abundance per guild per sample
 guild_rel <- df_rel %>%
-  dplyr::group_by(SampleID, TRAT2, DEPTH, guild_fg) %>%
+  dplyr::group_by(SampleID, TRAT2, DEPTH, primary_lifestyle) %>%
   dplyr::summarise(RelAbund = sum(RelAbund), .groups = "drop") 
 
 guild_rel %>% ## Just to make sure the sum of rel abundances per guild per sample = 1
@@ -204,38 +277,47 @@ guild_rel %>% ## Just to make sure the sum of rel abundances per guild per sampl
 
 ## Summarise to graph
 guild_rel_summary <- guild_rel %>%
-  dplyr::group_by(TRAT2, DEPTH, guild_fg) %>%
+  dplyr::group_by(TRAT2, DEPTH, primary_lifestyle) %>%
   dplyr::summarise(MeanRelAbund = mean(RelAbund)*100,
                    se = sd(RelAbund)/sqrt(n())*100,
                    .groups = "drop") 
-#guild_rel_summary %>%  #Normalize each mean within each treatment/depth to make sure in the graph each bar adds to 1
-#  dplyr::group_by(TRAT2, DEPTH) %>%
-#  dplyr::mutate(graph_abun = MeanRelAbund / sum(MeanRelAbund))
+
+guild_rel_summary %>%  #Normalize each mean within each treatment/depth to make sure in the graph each bar adds to 1
+  dplyr::group_by(TRAT2, DEPTH) %>%
+  dplyr::mutate(graph_abun = MeanRelAbund / sum(MeanRelAbund))
 
 guild_rel_summary2 <- guild_rel_summary %>%
   dplyr::group_by(TRAT2, DEPTH) %>%
-  dplyr::mutate(guild_fg = ifelse(graph_abun < 0.05, "Other", as.character(guild_fg))) %>%
-  ungroup()
+  dplyr::mutate(primary_lifestyle = ifelse(MeanRelAbund < 5, "Other", as.character(primary_lifestyle))) %>%
+  ungroup() %>%
+  # Summarize again because multiple guilds may become "Other"
+  dplyr::group_by(TRAT2, DEPTH, primary_lifestyle) %>%
+  dplyr::summarise(
+    MeanRelAbund = sum(MeanRelAbund),
+    se = sum(se),       # optional; conservative
+    .groups = "drop"
+  )
 
 guild_rel_summary2$TRAT2 <- ordered(guild_rel_summary2$TRAT2, levels = c("UB", "LS", "HS1", "HS2"))
 guild_rel_summary2$DEPTH <- ordered(guild_rel_summary2$DEPTH, levels = c("topsoil", "subsoil"))
 
 mine <- c("#DD1C77",
-          "#C994C7", 
-          "#a1d99b",
-          "#9ecae1",
-          "#edf8b1", 
-          "#2c7fb8", 
+  "#8c6bb1",
+           
+          "#C994C7",
+          "#2c7fb8",
+          "#a6bddb",
+          "#9ecae1", 
           "#7F3980")
 
-ggplot(guild_rel_summary2, aes(x = TRAT2, y = graph_abun, fill = guild_fg)) +
+ggplot(guild_rel_summary2, aes(x = TRAT2, y = graph_abun, fill = primary_lifestyle)) +
   geom_col(position = "stack") +
   coord_flip() +
   facet_wrap(~DEPTH, nrow = 1) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   #scale_fill_brewer(name = "Fungal guild", palette = "Dark2", na.value = "grey50")+
   #scale_fill_viridis_d(name = "Fungal guild", option = "D", na.value = "grey50", direction = -1) +
-  scale_fill_manual(values=mine, na.value = "grey70") +
+  scale_fill_manual(values=mine, na.value = "grey60") +
   labs(
     x = "Fire severity treatment",
     y = "Mean relative abundance (%)",
@@ -256,7 +338,31 @@ ggplot(guild_rel_summary2, aes(x = TRAT2, y = graph_abun, fill = guild_fg)) +
 ```
 
 ```{r}
-vista <- df_rel %>% dplyr::filter(Genus=="Tomentella")
+# Assuming 'guild_rel_summary' has Mean relative abundances in decimals (0-1)
+guild_summary_table <- guild_rel %>%
+  dplyr::group_by(TRAT2, DEPTH, primary_lifestyle) %>%
+  dplyr::summarise(
+    MeanRelAbund = mean(RelAbund, na.rm = TRUE),
+    SDRelAbund = sd(RelAbund, na.rm = TRUE),
+    n = n(),
+    SE = SDRelAbund / sqrt(n),
+    .groups = "drop"
+  ) %>%
+  # convert to percentage
+  dplyr::mutate(
+    MeanRelAbund = MeanRelAbund * 100,
+    SE = SE * 100
+  ) %>%
+  arrange(DEPTH, TRAT2, primary_lifestyle)
+
+# View the summary table
+vista <- guild_summary_table %>% dplyr::filter(primary_lifestyle=="unspecified_saprotroph")
+
+```
+
+```{r}
+vista <- Polme_2020 %>% dplyr::filter(primary_lifestyle=="other")
+vista <- df_rel %>% dplyr::filter(Genus=="Linnemannia")
 ```
 
 ```{r DOES RELATIVE ABUNDANCE DIFFER BY SEVERITY AND DEPTH?}
@@ -264,7 +370,7 @@ vista <- df_rel %>% dplyr::filter(Genus=="Tomentella")
 guild_rel_TOP <- guild_rel %>% dplyr::filter(DEPTH=="topsoil")
 guild_rel_SUB <- guild_rel %>% dplyr::filter(DEPTH=="subsoil")
 
-lm_results <- lm(RelAbund ~ TRAT2, data = guild_rel_TOP %>% dplyr::filter(guild_fg=="Wood Saprotroph")) 
+lm_results <- lm(RelAbund ~ TRAT2, data = guild_rel_TOP %>% dplyr::filter(primary_lifestyle=="unspecified_saprotroph")) 
 anova(lm_results)
 emm <- emmeans(lm_results, pairwise ~ TRAT2)
 

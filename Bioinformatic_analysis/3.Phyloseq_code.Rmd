@@ -15,7 +15,7 @@ output:
 
 ```{r Packages}
 #install.packages("pacman")
-pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car", "plyr", "ggpubr", "ggsignif", "ape", "cooccur", "igraph", "reshape2", "cowplot", "patchwork", "randomForest", "rfPermute", "ggtree", "FSA", "rcompanion", "phytools", "msa", "ggvegan", "VennDiagram")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "devtools","emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "BiocManager", "phyloseq", "phangorn", "DECIPHER", "biomformat", "rbiom", "plyr", "indicspecies", "networkD3", "htmlwidgets", "webshot2", "vegan", "lme4", "car", "plyr", "ggpubr", "ggsignif", "ape", "cooccur", "igraph", "reshape2", "cowplot", "patchwork", "randomForest", "rfPermute", "ggtree", "FSA", "rcompanion", "phytools", "msa", "ggvegan", "VennDiagram", "pairwiseAdonis", "lavaan")
 ```
 
 ```{r Packages: BiocManager}
@@ -26,6 +26,9 @@ BiocManager::install("microbiome")
 BiocManager::install(c("DECIPHER", "phangorn"))
 
 remotes::install_github("gavinsimpson/ggvegan")
+#devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+
+devtools::install_github("jslefche/piecewiseSEM@devel", force = TRUE)
 ```
 
 ```{r Colors}
@@ -180,12 +183,12 @@ cat("Number of unique genera:", n_genera, "\n")
 # Chao1: non-parametric estimator of the minimum species richness. The number of species in a community, accounting for the number of rare species that are likely to be missed
 # Shannon: It measures the diversity of a community by considering both species richness and evenness. Higher values indicate greater diversity, with more even distribution of species abundances.
 
-alpha_fungi <- microbiome::alpha(ps1, index = c("observed", "diversity_shannon", "diversity_fisher")) #ps1: only for Fungi Kingdom
+alpha_fungi <- microbiome::alpha(ps1, index = c("observed", "diversity_shannon", "dominance_dbp")) #ps1: only for Fungi Kingdom
 
 alpha_fungi <- alpha_fungi %>% 
   tibble::rownames_to_column(var = "SampleID")
 
-metadata_df <- meta_data %>% 
+metadata_df <- meta_data_pc1 %>% 
   tibble::rownames_to_column(var = "SampleID")
 
 alpha_fungi <- left_join(alpha_fungi, metadata_df, by = "SampleID")
@@ -193,8 +196,8 @@ alpha_fungi <- left_join(alpha_fungi, metadata_df, by = "SampleID")
 ### MEAN RICHNESS PER FIRE SEVERITY
 richness_summary <- alpha_fungi %>%
   dplyr::group_by(DEPTH, TRAT2) %>%                
-  dplyr::summarise(mean_richness = mean(observed, na.rm = TRUE),
-                   SE_richness = sd(observed) / sqrt(n()))
+  dplyr::summarise(mean_richness = mean(dominance_dbp, na.rm = TRUE),
+                   SE_richness = sd(dominance_dbp) / sqrt(n()))
 
 loss_percent <- richness_summary %>%
   dplyr::filter(DEPTH == "topsoil") %>%
@@ -210,7 +213,7 @@ alpha_fungi$TRAT2 <- ordered(alpha_fungi$TRAT2, levels=c("UB", "LS", "HS1", "HS2
 alpha_fungi$DEPTH <- ordered(alpha_fungi$DEPTH, levels=c("topsoil", "subsoil"))
 
 ### Visually assessment of data
-var <- (alpha_fungi$diversity_fisher)
+var <- (alpha_fungi$dominance_dbp)
 
 hist(var) 
 
@@ -245,6 +248,22 @@ par(mfrow=c(1,1))
 car::Anova(mixed.var, test.statistic="F", type=3)
 
 multcomp::cld(emmeans(mixed.var, ~TRAT2*DEPTH, type="response"), Letters= letters) #Tuckey's post-hoc test
+
+##
+alpha_fungi_TOP <- alpha_fungi %>% dplyr::filter(DEPTH=="topsoil")
+alpha_fungi_SUB <- alpha_fungi %>% dplyr::filter(DEPTH=="subsoil")
+
+lmm_depth <- lmer(dominance_dbp ~ TRAT2 + (1|SITE), data = alpha_fungi_SUB)
+
+par(mfrow=c(1,3))
+qqnorm(resid(lmm_depth)); qqline(resid(lmm_depth))
+hist(resid(lmm_depth))
+plot(fitted(lmm_depth), resid(lmm_depth)); abline(h=0)
+par(mfrow=c(1,1))
+
+car::Anova(lmm_depth, test.statistic="F", type=3)
+
+multcomp::cld(emmeans(lmm_depth, ~TRAT2, type="response"), Letters= letters) #Tuckey's post-hoc test
 ```
 
 *We've run Alpha Diversity with all ASV (ps) and with only Kingdom Fungi (ps1)*
@@ -278,22 +297,22 @@ p+  geom_boxplot(aes(fill = TRAT2), alpha=.2) +
 #ggsave("alpha_div_k_fungi.png")
 
 alpha_fungi_plot <- alpha_fungi %>%
-  dplyr::select(TRAT2, DEPTH, observed, diversity_shannon, diversity_fisher)
+  dplyr::select(TRAT2, DEPTH, observed, diversity_shannon, dominance_dbp)
 # Pivot longer
 alpha_fungi_long <- alpha_fungi_plot %>%
   pivot_longer(
-    cols = c(diversity_fisher, diversity_shannon, observed),
+    cols = c(dominance_dbp, diversity_shannon, observed),
     names_to = "Index",
     values_to = "Value"
   )
 
 alpha_fungi_long$TRAT2 <- factor(alpha_fungi_long$TRAT2, levels = c("UB", "LS", "HS1", "HS2") )
-alpha_fungi_long$Index <- factor(alpha_fungi_long$Index, levels = c("observed", "diversity_shannon", "diversity_fisher") )
+alpha_fungi_long$Index <- factor(alpha_fungi_long$Index, levels = c("observed", "diversity_shannon", "dominance_dbp") )
 alpha_fungi_long$DEPTH <- factor(alpha_fungi_long$DEPTH, levels = c("topsoil","subsoil"))
 
 ggplot(alpha_fungi_long, aes(x=TRAT2, y = Value, alpha=.6, color=TRAT2))+
-  geom_boxplot(aes(fill = TRAT2), alpha=.2) + 
-  geom_jitter(width = 0.2, size = 3, alpha=.3) + # puntos individuales
+  geom_boxplot(aes(fill = TRAT2), size = 0.3, alpha=.2) + 
+  geom_jitter(width = 0.2, size = 3, alpha=.5) + # puntos individuales
   scale_color_manual(values = cols) + 
   scale_fill_manual(values = cols) +
   theme_bw()+
@@ -314,11 +333,11 @@ ggplot(alpha_fungi_long, aes(x=TRAT2, y = Value, alpha=.6, color=TRAT2))+
 ```{r Alpha Div/Phylum}
 # Ascomycota
 ps_asco <- phyloseq::subset_taxa(ps1, Phylum == "p__Ascomycota")
-alpha_asco <- microbiome::alpha(ps_asco, index = c("observed", "diversity_shannon", "diversity_fisher"))
+alpha_asco <- microbiome::alpha(ps_asco, index = c("observed", "diversity_shannon", "dominance_dbp"))
 
 # Basidiomycota
 ps_basi <- phyloseq::subset_taxa(ps1, Phylum == "p__Basidiomycota")
-alpha_basi <- microbiome::alpha(ps_basi, index = c("observed", "diversity_shannon", "diversity_fisher"))
+alpha_basi <- microbiome::alpha(ps_basi, index = c("observed", "diversity_shannon", "dominance_dbp"))
 
 alpha_asco$Phylum <- "Ascomycota"
 alpha_asco <- alpha_asco %>% 
@@ -333,17 +352,17 @@ alpha_basi <- left_join(alpha_basi, metadata_df, by = "SampleID")
 alpha_by_phylum <- rbind(alpha_asco, alpha_basi)
 
 alpha_phylum_plot <- alpha_by_phylum %>%
-  dplyr::select(TRAT2, DEPTH, Phylum, observed, diversity_shannon, diversity_fisher)
+  dplyr::select(TRAT2, DEPTH, Phylum, observed, diversity_shannon, dominance_dbp)
 # Pivot longer
 alpha_phylum_long <- alpha_phylum_plot %>%
   pivot_longer(
-    cols = c(diversity_fisher, diversity_shannon, observed),
+    cols = c(dominance_dbp, diversity_shannon, observed),
     names_to = "Index",
     values_to = "Value"
   )
 
 alpha_phylum_long$TRAT2 <- factor(alpha_phylum_long$TRAT2, levels = c("UB", "LS", "HS1", "HS2") )
-alpha_phylum_long$Index <- factor(alpha_phylum_long$Index, levels = c("observed", "diversity_shannon", "diversity_fisher") )
+alpha_phylum_long$Index <- factor(alpha_phylum_long$Index, levels = c("observed", "diversity_shannon", "dominance_dbp") )
 alpha_phylum_long$DEPTH <- factor(alpha_phylum_long$DEPTH, levels = c("topsoil","subsoil"))
 
 ggplot(alpha_phylum_long, aes(x=TRAT2, y = Value, shape = Phylum, alpha=.6, color=TRAT2))+
@@ -360,16 +379,16 @@ ggplot(alpha_phylum_long, aes(x=TRAT2, y = Value, shape = Phylum, alpha=.6, colo
     axis.text.x = element_text(angle = 0.1, hjust = 1),  # Rotate x-axis labels
     panel.background = element_blank(),  # Remove panel background color
     plot.background = element_blank(),   # Remove plot background color
-    #legend.position = "none"             # Remove legend
+    legend.position = "none"             # Remove legend
   )+
   facet_grid(Index~DEPTH, scales="free_y")
-#ggsave("alpha_asco_basidio.png")
+ggsave("alpha_asco_basidio.png", width = 6, height = 7, dpi = 300)
 
 ### MODELS: ARE THERE SIGNIFICANT DIFFERENCES IN ASCOMYCOTA (OR BASIDIOMYCOTA) ALPHA-DIVERSITY (e.g: Richness) ACROSS FIRE SEVERITIES AND SOIL DEPTHS?
 alpha_by_phylum_TOP <- alpha_by_phylum %>% dplyr::filter(DEPTH=="topsoil")
 alpha_by_phylum_SUB <- alpha_by_phylum %>% dplyr::filter(DEPTH=="subsoil")
 
-lmm_asco <- lmer(diversity_fisher ~ TRAT2 + (1|SITE), data = alpha_by_phylum_SUB %>% filter(Phylum == "Ascomycota"))
+  lmm_asco <- lmer(dominance_dbp ~ TRAT2 + (1|SITE), data = alpha_by_phylum_TOP %>% filter(Phylum == "Ascomycota"))
 
 par(mfrow=c(1,3))
 qqnorm(resid(lmm_asco)); qqline(resid(lmm_asco))
@@ -804,7 +823,7 @@ chem_vars <- c("pH", "EC", "densidad_revisada_25", "C_N_ratio",
               "NH4_mgL_105","NO3_mgL_105", 
               "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
               "Nitrogen_stock_Mg_ha", "SOM_per_corregido", "MBC_mg_kg_105",
-              "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
+             "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
               "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")
 
 env2_df <- ps_hel_meta_data %>%
@@ -836,18 +855,20 @@ pcoa_df %>%
     strip.text = element_text(size = 14, face = "bold")
   )
 #ggsave("PCoA2.png") #### FIGURE 4 ####
+```
 
+```{r}
 ####TOPSOIL
 ps_hel_topsoil <- subset_samples(ps_hel, DEPTH == "topsoil")
 bray_dist_top <- phyloseq::distance(ps_hel_topsoil, method="bray")
 # Perform PCoA
 
 pcoa_top <- cmdscale(bray_dist_top, k = 2, eig=TRUE)  # k = dimensions
-str(pcoa_top)
+
 # Create a data frame for the PCoA results
-pcoa_top_df <- data.frame(PCoA1 = pcoa_top[, 1],
-                      PCoA2 = pcoa_top[, 2],
-                      Sample = rownames(pcoa_top))
+pcoa_top_df <- data.frame(PCoA1 = pcoa_top$points[, 1],
+                      PCoA2 = pcoa_top$points[, 2],
+                      Sample = rownames(pcoa_top$points))
 class(pcoa_top_df)
 
 meta_data_top <- ps_hel_meta_data %>% dplyr::filter(DEPTH=="topsoil")
@@ -863,8 +884,7 @@ variance_explained[1:2]  # PCoA1 and PCoA2
 pcoa_top_df_merged <- merge(pcoa_top_df, meta_data_top, by = "Sample")
 
 # Add envfit:
-env2_SUB <- ps_hel_meta_data %>%
-  filter(DEPTH =="topsoil") %>%
+env2_TOP <- meta_data_top  %>%
   dplyr::select(all_of(chem_vars)) 
 
 # Run envfit using the distance matrix and the environmental variables
@@ -875,67 +895,55 @@ env_coord_sig_top <- as.data.frame(env_coord_top[envfit_top$vectors$pvals < 0.01
 env_coord_sig_top
 
 env_coord_sig_top$Variable <- rownames(env_coord_sig_top)
-mult <- 1.5  # para ajustar la longitud de las flechas al gráfico
+mult <- 0.25  # para ajustar la longitud de las flechas al gráfico
 arrows_df <- env_coord_sig_top %>%
   dplyr::mutate(PCoA1 = Dim1 * mult,
                 PCoA2 = Dim2 * mult)
-pcoa_top_df %>%
-  ggplot(aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
+
+
+env_top <- ggplot(pcoa_top_df_merged, aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
+  # Flechas de envfit
   geom_segment(data = arrows_df,
-               aes(x = 0, y = 0, xend = PCoA1*0.5, yend = PCoA2*0.5),
+               aes(x = 0, y = 0, xend = PCoA1*0.85, yend = PCoA2*0.85),
                arrow = arrow(length = unit(0.2, "cm")),
-               size = 1, color = "grey",
+               size = 0.6, color = "grey30",
                inherit.aes = FALSE) +
-  geom_point(size = 5, alpha = .6) +
+  # Texto con nombres de variables
+  #geom_text(data = arrows_df,
+  #                aes(x = PCoA1, y = PCoA2, label = Variable),
+  #                size = 4,
+  #                color = "black",
+  #                inherit.aes = FALSE) +
+  # Puntos de muestras
+  geom_point(size = 6, alpha = 0.6) +
   scale_color_manual(values = cols) +
   theme_minimal() +
-  labs(x = "PCoA 1", y = "PCoA 2") +
+  labs(x = "PCoA 1 (13.35%)", 
+       y = "PCoA 2 (5.53%)") +
   theme(
     panel.background = element_blank(),
     panel.border = element_rect(colour = "black", fill = NA),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 14),
-    axis.text.y = element_text(size = 14),
+    axis.text = element_text(size = 13, color = "black"),
+    axis.title = element_text(size = 15, face = "bold"),
     legend.position = "none"
   ) +
   scale_x_reverse()
-#ggsave("PCoA_top.png")
+#ggsave("PCoA_top_envfit2.png")
+```
 
-# Plot PCoA
-pcoa_top_df %>%
-  ggplot(aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
-  geom_segment(data = arrows_df,
-               aes(x = 0, y = 0, xend = PCoA1*0.5, yend = PCoA2*0.5), # xend and yend *0.5 to reduce arrow lenght
-               arrow = arrow(length = unit(0.2, "cm")),
-               size =1, color = "grey",
-               inherit.aes = FALSE) +  
-  geom_text(data = arrows_df,
-            aes(x = PCoA1, y = PCoA2, label = Variable),
-            size = 4, hjust = 0.5, vjust = -0.7,
-            inherit.aes = FALSE) +  
-  geom_point(size = 5, alpha=.6) +
-  scale_color_manual(values = cols) +
-  theme_minimal() +
-  labs(x = "PCoA 1", y = "PCoA 2") +
-  theme(
-    panel.background = element_blank(),
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank(),
-    axis.text.x = element_text(size = 14),  # Change this value as needed
-    axis.text.y = element_text(size = 14),
-    legend.position = "none") +
-  scale_x_reverse()
-#ggsave("PCoA_top.png")
-
+```{r}
 ####SUBSOIL
 ps_hel_subsoil <- subset_samples(ps_hel, DEPTH == "subsoil")
 bray_dist_sub <- phyloseq::distance(ps_hel_subsoil, method="bray")
 # Perform PCoA
 pcoa_sub <- cmdscale(bray_dist_sub, k = 2, eig=TRUE)  # k = dimensions
 # Create a data frame for the PCoA results
-pcoa_sub_df <- data.frame(PCoA1 = pcoa_sub[, 1],
-                      PCoA2 = pcoa_sub[, 2],
-                      Sample = rownames(pcoa_sub))
+pcoa_sub_df <- data.frame(
+  PCoA1 = pcoa_sub$points[,1],
+  PCoA2 = pcoa_sub$points[,2],
+  Sample = rownames(pcoa_sub$points)
+)
 meta_data_sub <- meta_data_sub %>%
   mutate(Sample = rownames(meta_data_sub))
 
@@ -948,8 +956,7 @@ variance_explained[1:2]  # PCoA1 and PCoA2
 pcoa_sub_df <- merge(pcoa_sub_df, meta_data_sub, by = "Sample")
 
 # Add envfit:
-env2_SUB <- ps_hel_meta_data %>%
-  filter(DEPTH =="subsoil") %>%
+env2_SUB <- meta_data_sub %>%
   dplyr::select(all_of(chem_vars)) 
 
 # Run envfit using the distance matrix and the environmental variables
@@ -960,58 +967,46 @@ env_coord_sig_sub <- as.data.frame(env_coord_sub[envfit_sub$vectors$pvals < 0.01
 env_coord_sig_sub
 
 env_coord_sig_sub$Variable <- rownames(env_coord_sig_sub)
-mult <- 1.5  # para ajustar la longitud de las flechas al gráfico
+mult <- 0.25  # para ajustar la longitud de las flechas al gráfico
 arrows_df <- env_coord_sig_sub %>%
   dplyr::mutate(PCoA1 = Dim1 * mult,
                 PCoA2 = Dim2 * mult)
 
-pcoa_sub_df %>%
-  ggplot(aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
+# Plot PCoA
+env_sub <- ggplot(pcoa_sub_df, aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
+  # Flechas de envfit
   geom_segment(data = arrows_df,
-               aes(x = 0, y = 0, xend = PCoA1*0.5, yend = PCoA2*0.5),
+               aes(x = 0, y = 0, xend = PCoA1*0.85, yend = PCoA2*0.85),
                arrow = arrow(length = unit(0.2, "cm")),
-               size = 1, color = "grey",
+               size = 0.6, color = "grey30",
                inherit.aes = FALSE) +
-  geom_point(size = 5, alpha = .6) +
+  # Texto con nombres de variables
+  #geom_text(data = arrows_df,
+  #                aes(x = PCoA1, y = PCoA2, label = Variable),
+  #                size = 4,
+  #                color = "black",
+  #                inherit.aes = FALSE) +
+  # Puntos de muestras
+  geom_point(size = 6, alpha = 0.6) +
   scale_color_manual(values = cols) +
   theme_minimal() +
-  labs(x = "PCoA 1", y = "PCoA 2") +
+  labs(x = "PCoA 1 (6.36%)", y = "PCoA 2 (5.84%)") +
   theme(
     panel.background = element_blank(),
     panel.border = element_rect(colour = "black", fill = NA),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 14),
-    axis.text.y = element_text(size = 14),
+    axis.text = element_text(size = 13, color = "black"),
+    axis.title = element_text(size = 15, face = "bold"),
     legend.position = "none"
   ) +
   scale_x_reverse()
-ggsave("PCoA_sub.png")
+#ggsave("PCoA_sub_envfit2.png")
+```
 
-# Plot PCoA
-pcoa_sub_df %>%
-  ggplot(aes(x = PCoA1, y = PCoA2, color = TRAT2)) +
-  geom_segment(data = arrows_df,
-               aes(x = 0, y = 0, xend = PCoA1*0.4, yend = PCoA2*0.4), # xend and yend *0.5 to reduce arrow lenght
-               arrow = arrow(length = unit(0.2, "cm")),
-               size =1, color = "darkgrey",
-               inherit.aes = FALSE) +  
-  geom_text(data = arrows_df,
-            aes(x = PCoA1, y = PCoA2, label = Variable),
-            size = 4, hjust = 0.5, vjust = -0.7,
-            inherit.aes = FALSE) +  
-  geom_point(size = 6, alpha=.5) +
-  scale_color_manual(values = cols) +
-  #theme_minimal() +
-  labs(x = "PCoA 1", y = "PCoA 2") +
-  theme(
-    panel.background = element_blank(),
-    panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank(),
-    axis.text.x = element_text(size = 14),  # Change this value as needed
-    axis.text.y = element_text(size = 14),
-    legend.position = "none") +
-  scale_x_reverse()
-#ggsave("PCoA_sub.png")
+```{r}
+combined_plot <- env_top + env_sub + plot_layout(ncol = 1, heights = c(2, 2))
+combined_plot
+#ggsave("combined_envfit2.png", width = 5, height = 8, dpi = 300)
 ```
 
 ```{r PCoA as linear predictor}
@@ -1190,6 +1185,25 @@ plot(disp)
 #dev.off()
 ```
 
+```{r Pairwise PERMANOVA}
+#' Run pairwise comparisons by a grouping variable using `vegan::adonis`
+pairwise_top <- pairwise.adonis(
+  bray_dist_top,                 # distance matrix
+  meta_data_top$TRAT2,           # grouping variable
+  perm = 999
+)
+pairwise_top
+
+
+pairwise_sub <- pairwise.adonis(
+  bray_dist_sub,
+  meta_data_sub$TRAT2,
+  perm = 999
+)
+pairwise_sub
+?pairwise.adonis
+```
+
 ```{r UniFrac}
 # We first calculate the phylogenetic distances: 
 
@@ -1346,18 +1360,6 @@ abund_perc_top <- df_rel_top %>%      ## Aggregation by fire severity
   dplyr::summarise(mean_abundance = mean(Abundance), .groups = "drop") %>%
   dplyr::mutate(percent = 100 * mean_abundance)
 
-#######
-trial <- df_rel_top %>%
-  dplyr::group_by(OTU) %>%
-  dplyr::summarise(Abundance = sum(Abundance), .groups = "drop") %>%
-  dplyr::mutate(Abundance = Abundance / sum(Abundance))
-abund_perc_top <- df_rel_top %>%
-  dplyr::mutate(percent = 100 * Abundance)
-TOP_abundances_0 <- left_join(plot_data_top, abund_perc_top, by = c("ASV"))
-
-
-##########
-
 #Match indicator taxa with their abundances
 plot_data_top <- sig_TOP_ind %>%
   pivot_longer(cols = starts_with("s."), names_to = "TRAT2", values_to = "Presence") %>%
@@ -1393,14 +1395,14 @@ b1 <- ggplot(TOP_abundances, aes(x = stat, y = Genus, color = stat)) +
   theme_minimal() +
   theme(
     panel.border = element_rect(colour = "black", fill = NA),
-    panel.grid = element_blank(),
-    panel.grid.minor = element_blank(),
+    #panel.grid = element_blank(),
+    #panel.grid.minor = element_blank(),
     axis.line = element_line(color = "black"),
     axis.text = element_text(color = "black"),
     axis.ticks = element_line(color = "black"),
     strip.placement = "outside",  # Place strip labels outside the plot
     legend.position = "none",
-    #strip.background = element_blank()  # Remove strip background
+    strip.background = element_blank()  # Remove strip background
   ) +
   scale_y_discrete() +
   scale_x_continuous(expand = expansion(mult = c(-0.7, 0.05))) +
@@ -1498,16 +1500,16 @@ b2 <- ggplot(SUB_abundances, aes(x = stat, y = Genus, color = stat)) +
     legend.position = "none",
     #strip.background = element_blank()  # Remove strip background
   ) +
-  #scale_y_discrete() +
+  scale_y_discrete() +
   scale_x_continuous(expand = expansion(mult = c(-0.7, 0.05))) +
   facet_wrap(~TRAT2, nrow = 1)
 #ggsave("SUPP_bubbles_indspecies_SUBx.png", width = 6, height = 4, dpi = 300) #### FIGURE 5b ####
 ```
 
 ```{r Combined topsoil & subsoil Indicator Species}
-combined_plot <- b1 + b2 + plot_layout(ncol = 2, widths = c(2, 2))
+combined_plot <- b1 + b2 + plot_layout(ncol = 2, widths = c(2, 2), heights = c(2,1))
 combined_plot
-ggsave("combined_indic2.png", combined_plot, width = 10, height = 4.2, dpi = 300)
+ggsave("combined_indic3.png", combined_plot, width = 10, height = 4.2, dpi = 300)
 ```
 
 ```{r Venn Diagram}
@@ -1520,10 +1522,10 @@ asv_trans_TOP <- as.data.frame(asv_trans_TOP) #transposed otu mat
 asv_trans_TOP[asv_trans_TOP > 0] <- 1
 
 #Filter by indicator genera
-otu_top_ind <- asv_trans_TOP[, colnames(asv_trans_TOP) %in% sig_TOP_ind$ASV]
+otu_top_ind <- asv_trans_TOP#[, colnames(asv_trans_TOP) %in% sig_TOP_ind$ASV]
 
 #Group by fire severity
-otu_by_TOP <- otu_top_ind %>%
+otu_by_TOP <- asv_trans_TOP %>%
   dplyr::mutate(TRAT2 = ps1_genus_metaTOP$TRAT2) %>%
   dplyr::group_by(TRAT2) %>%
   dplyr::summarise(across(everything(), max)) 
@@ -1534,10 +1536,16 @@ venn_list_top <- lapply(otu_by_TOP$TRAT2, function(trat) {
 })
 names(venn_list_top) <- otu_by_TOP$TRAT2
 
+asv_counts <- sapply(venn_list_top, length)
+asv_counts
+total_asvs <- sum(asv_counts)
+?venn.diagram
+
 venn.diagram(
   x = venn_list_top,
-  filename = "00.png",
+  filename = "WHOLE_TOP.png",
   output=TRUE, 
+  print.mode= c("percent","raw"),
   fill = c("#41b6c4","#fd8d3c","#cb181d","#800026"),  
   alpha = 0.6,
   #cex = 1.2,
@@ -1555,10 +1563,10 @@ asv_trans_SUB <- as.data.frame(asv_trans_SUB) #transposed otu mat
 asv_trans_SUB[asv_trans_SUB > 0] <- 1
 
 #Filter by indicator genera
-otu_sub_ind <- asv_trans_SUB[, colnames(asv_trans_SUB) %in% sig_SUB_ind$ASV]
+otu_sub_ind <- asv_trans_SUB#[, colnames(asv_trans_SUB) %in% sig_SUB_ind$ASV]
 
 #Group by fire severity
-otu_by_SUB <- otu_sub_ind %>%
+otu_by_SUB <- asv_trans_SUB %>%
   dplyr::mutate(TRAT2 = ps1_genus_metaSUB$TRAT2) %>%
   dplyr::group_by(TRAT2) %>%
   dplyr::summarise(across(everything(), max)) 
@@ -1571,8 +1579,9 @@ names(venn_list_sub) <- otu_by_SUB$TRAT2
 
 venn.diagram(
   x = venn_list_sub,
-  filename = "SUBSOIL_ind_venn_diagramm.png",
+  filename = "WHOLE_SUB.png",
   output=TRUE, 
+  print.mode= c("percent","raw"),
   fill = c("#41b6c4","#fd8d3c","#cb181d","#800026"), 
   alpha = 0.6,
   #cex = 1.2,
@@ -1580,12 +1589,6 @@ venn.diagram(
   category.names = names(venn_list_sub),
   main = "Shared Indicator Genera by Fire Severity (Subsoil)"
 ) #### FIGURE 5d ####
-```
-
-```{r Microbiome network plot}
-
-plot_net(ps1,color="TRAT2")
-
 ```
 
 ```{r RDA TOPSOIL}
@@ -1741,25 +1744,31 @@ h2 <- ggplot(RDA, aes(x = RDA1, y = RDA2, color = TRAT2)) +
 ```{r Combined RDA plots}
 combined_plot <- h1 + h2 + plot_layout(ncol = 1, heights = c(3, 2))
 combined_plot
-ggsave("combined_RDA.png", width = 5, height = 8, dpi = 300)
+#ggsave("combined_RDA.png", width = 5, height = 8, dpi = 300)
 ```
 
 ```{r MODELS: soil physicochemical variables on richness}
 #TOPSOIL
 alpha_fungi_top <- alpha_fungi %>% filter(DEPTH=="topsoil")
-rownames(alpha_fung_top) = alpha_fung_top$SampleID
+rownames(alpha_fungi_top) = alpha_fungi_top$SampleID
 alpha_fungi_top <- alpha_fungi_top %>% 
   dplyr::mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
          C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
+#Standardize predictors: 
+alpha_fungi_top_scaled <- alpha_fungi_top %>% 
+  mutate(across(where(is.numeric), ~ as.numeric(scale(.))))
 
+# Which soil properties explain variation in fungal richness in topsoil?
 phychem_lmTOP <- lm(observed ~ pH+ EC+ C_N_ratio+
               A_phosphorus_ppm_105+ Phosphatase_activity_µmol_g_h+ 
               NH4_mgL_105+NO3_mgL_105+ 
               Ntotal_g_100g_105+ Ctotal_g_100g_105+ Carbon_stock_Mg_ha+
               Nitrogen_stock_Mg_ha+ SOM_per_corregido+ MBC_mg_kg_105+
               Nematode_g_105+ Ca_g_kg+ K_g_kg+Mg_g_kg+ Na_g_kg+ 
-              Al_g_kg+ Fe_g_Kg+Zn_mg_Kg_105+ Cu_mg_Kg_105, data=alpha_fungi_top)
+              Al_g_kg+ Fe_g_Kg+Zn_mg_Kg_105+ Cu_mg_Kg_105, data=alpha_fungi_top_scaled)
 summary(phychem_lmTOP)
+
+car::vif(phychem_lmTOP) # VIF (Variance Inflation Factor) quantifies how much the variance of a regression coefficient is inflated due to collinearity with other predictors. Values above > 5 indicate concerning values... Variables are too correlated
 
 step(lm(observed ~ pH+ EC+ C_N_ratio+
               A_phosphorus_ppm_105+ Phosphatase_activity_µmol_g_h+ 
@@ -1767,11 +1776,17 @@ step(lm(observed ~ pH+ EC+ C_N_ratio+
               Ntotal_g_100g_105+ Ctotal_g_100g_105+ Carbon_stock_Mg_ha+
               Nitrogen_stock_Mg_ha+ SOM_per_corregido+ MBC_mg_kg_105+
               Nematode_g_105+ Ca_g_kg+ K_g_kg+Mg_g_kg+ Na_g_kg+ 
-              Al_g_kg+ Fe_g_Kg+Zn_mg_Kg_105+ Cu_mg_Kg_105, data=alpha_fungi_top), direction="both")
+              Al_g_kg+ Fe_g_Kg+Zn_mg_Kg_105+ Cu_mg_Kg_105, data=alpha_fungi_top_scaled), direction="both")
+
+phychem_lmTOP <- lm(observed ~ C_N_ratio + Phosphatase_activity_µmol_g_h + 
+    Carbon_stock_Mg_ha + Nitrogen_stock_Mg_ha + MBC_mg_kg_105 + 
+    Mg_g_kg, data = alpha_fungi_top_scaled)
 
 phychem_lmTOP <- lm(observed ~ pH + A_phosphorus_ppm_105 + NH4_mgL_105 + 
-    MBC_mg_kg_105 + K_g_kg + Mg_g_kg + Al_g_kg, data = alpha_fungi_top)
+    MBC_mg_kg_105 + K_g_kg + Mg_g_kg + Al_g_kg, data = alpha_fungi_top_scaled)
+summary(phychem_lmTOP)
 (summary(phychem_lmTOP)$r.squared)
+car::vif(phychem_lmTOP) # now all the variables have a lw VIF
 
 #SUBSOIL
 alpha_fungi_sub <- alpha_fungi %>% filter(DEPTH=="subsoil")
@@ -1780,6 +1795,11 @@ alpha_fungi_sub <- alpha_fungi_sub %>%
   dplyr::mutate(Fe_g_Kg = Fe_mg_Kg_105/1000,
          C_N_ratio = Ctotal_g_100g_105/Ntotal_g_100g_105)
 
+#Standardize predictors: 
+alpha_fungi_sub_scaled <- alpha_fungi_sub %>% 
+  mutate(across(where(is.numeric), ~ as.numeric(scale(.))))
+
+# Which soil properties explain variation in fungal richness in subsoil?
 phychem_lmSUB <- lm(observed ~ pH+ EC+ C_N_ratio+
               A_phosphorus_ppm_105+ Phosphatase_activity_µmol_g_h+ 
               NH4_mgL_105+NO3_mgL_105+ 
@@ -1795,13 +1815,139 @@ step(lm(observed ~ pH+ EC+ C_N_ratio+
               Ntotal_g_100g_105+ Ctotal_g_100g_105+ Carbon_stock_Mg_ha+
               Nitrogen_stock_Mg_ha+ SOM_per_corregido+ MBC_mg_kg_105+
               Nematode_g_105+ Ca_g_kg+ K_g_kg+Mg_g_kg+ Na_g_kg+ 
-              Al_g_kg+ Fe_g_Kg+Zn_mg_Kg_105+ Cu_mg_Kg_105, data=alpha_fungi_sub), direction="both")
+              Al_g_kg+ Fe_g_Kg+Zn_mg_Kg_105+ Cu_mg_Kg_105, data=alpha_fungi_sub_scaled), direction="both")
 
 phychem_lmSUB <- lm(formula = observed ~ C_N_ratio + A_phosphorus_ppm_105 + Phosphatase_activity_µmol_g_h + 
-    NH4_mgL_105 + MBC_mg_kg_105 + Mg_g_kg + Al_g_kg + Zn_mg_Kg_105, 
-    data = alpha_fungi_sub)
-(summary(phychem_lmTOP)$r.squared)
+    NH4_mgL_105 + MBC_mg_kg_105 + Mg_g_kg + Al_g_kg , 
+    data = alpha_fungi_sub_scaled)
+summary(phychem_lmSUB)
+(summary(phychem_lmSUB)$r.squared)
+car::vif(phychem_lmSUB)
+```
 
+### The only way to test *causality* are SEM:
+
+```{r Structural Equation Models (SEM)}
+
+################################## ALL FUNGI #############################################
+# Topsoil
+library(piecewiseSEM)
+sem_top_all <- piecewiseSEM::psem(
+  lm(observed ~ pc1 + pH + A_phosphorus_ppm_105 + NH4_mgL_105 + 
+    MBC_mg_kg_105 + K_g_kg + Mg_g_kg + Al_g_kg, data = alpha_fungi_top),
+  lm(pH ~pc1, data = alpha_fungi_top),
+  lm(MBC_mg_kg_105~pc1, data = alpha_fungi_top),
+  MBC_mg_kg_105%~~%NH4_mgL_105,
+  pH%~~%K_g_kg
+)
+summary(sem_top_all)
+
+#Subsoil
+library(piecewiseSEM)
+sem_sub_all <- piecewiseSEM::psem(
+  lm(observed ~ pc1 + C_N_ratio + A_phosphorus_ppm_105 + Phosphatase_activity_µmol_g_h + 
+    NH4_mgL_105 + MBC_mg_kg_105 + Mg_g_kg + Al_g_kg + Zn_mg_Kg_105, 
+    data = alpha_fungi_sub),
+  #lm(pH ~pc1, data = alpha_fungi_top),
+  lm(MBC_mg_kg_105~pc1, data = alpha_fungi_top),
+  MBC_mg_kg_105%~~%NH4_mgL_105,
+  MBC_mg_kg_105%~~%C_N_ratio
+  #pH%~~%K_g_kg
+)
+summary(sem_sub_all)
+
+################################### GUILDS ##############################################
+## We want to know what influences most ectomycorrhizal richness vs saprotrophs richness 
+SEM_df_top <- guild_richness_SEM %>% dplyr::filter(DEPTH=="topsoil")
+SEM_df_sub <- guild_richness_SEM %>% dplyr::filter(DEPTH=="subsoil")
+
+# Topsoil
+library(piecewiseSEM)
+sem_top <- piecewiseSEM::psem(
+  lm(ECM_richness ~ pc1 + pH + A_phosphorus_ppm_105 + NH4_mgL_105 + 
+    MBC_mg_kg_105 + K_g_kg + Mg_g_kg + Al_g_kg +NO3_mgL_105, data = SEM_df_top),
+  lm(USp_richness ~ pc1 + A_phosphorus_ppm_105 + NH4_mgL_105 + 
+    SOM_per_corregido + Mg_g_kg + Al_g_kg + Zn_mg_Kg_105 + 
+    Cu_mg_Kg_105 + MBC_mg_kg_105 + NO3_mgL_105, data = SEM_df_top),
+  lm(LSp_richness ~ pc1+pH + A_phosphorus_ppm_105 + NH4_mgL_105 + 
+    Ntotal_g_100g_105 + Ctotal_g_100g_105 + K_g_kg + Fe_g_Kg + 
+    Zn_mg_Kg_105, data = SEM_df_top),
+  lm(NH4_mgL_105 ~ pc1, data = SEM_df_top),
+  lm(MBC_mg_kg_105 ~ pc1, data = SEM_df_top),
+  lm(A_phosphorus_ppm_105 ~ pc1, data = SEM_df_top),
+  lm(K_g_kg ~ pc1, data = SEM_df_top),
+  lm(Mg_g_kg ~ pc1, data = SEM_df_top),
+  lm(Al_g_kg ~ pc1 , data = SEM_df_top),
+  lm(pH ~ pc1, data = SEM_df_top),
+  lm(NO3_mgL_105 ~ pc1, data = SEM_df_top),
+  pH%~~%NH4_mgL_105,
+  pH %~~% A_phosphorus_ppm_105,
+  NH4_mgL_105%~~%MBC_mg_kg_105,
+  NH4_mgL_105%~~%A_phosphorus_ppm_105,
+  NH4_mgL_105%~~%NO3_mgL_105,
+  MBC_mg_kg_105%~~%A_phosphorus_ppm_105,
+  NH4_mgL_105%~~%SOM_per_corregido,
+  #A_phosphorus_ppm_105%~~%NO3_mgL_105,
+  A_phosphorus_ppm_105%~~%SOM_per_corregido,
+  K_g_kg%~~%pH,
+  Al_g_kg%~~%pH,
+  K_g_kg%~~%Zn_mg_Kg_105,
+  Mg_g_kg%~~%Zn_mg_Kg_105,
+  Al_g_kg%~~%Zn_mg_Kg_105,
+  Al_g_kg%~~%A_phosphorus_ppm_105,
+  K_g_kg%~~%Cu_mg_Kg_105,
+  Mg_g_kg%~~%Cu_mg_Kg_105,
+  Al_g_kg%~~%Cu_mg_Kg_105,
+  MBC_mg_kg_105%~~%SOM_per_corregido,
+  K_g_kg%~~%NH4_mgL_105,
+  Mg_g_kg%~~%NH4_mgL_105,
+  K_g_kg%~~%SOM_per_corregido,
+  Mg_g_kg%~~%SOM_per_corregido,
+  Mg_g_kg%~~%K_g_kg,
+  Al_g_kg%~~%Mg_g_kg,
+  Al_g_kg%~~%K_g_kg,
+  K_g_kg%~~%MBC_mg_kg_105,
+  Ntotal_g_100g_105%~~%NH4_mgL_105,
+  Ntotal_g_100g_105%~~%MBC_mg_kg_105,
+  Ntotal_g_100g_105%~~%A_phosphorus_ppm_105,
+  Ntotal_g_100g_105%~~%K_g_kg,
+  Ntotal_g_100g_105%~~%pH,
+  Ctotal_g_100g_105%~~%NH4_mgL_105,
+  Ctotal_g_100g_105%~~%MBC_mg_kg_105,
+  Ctotal_g_100g_105%~~%A_phosphorus_ppm_105,
+  Ctotal_g_100g_105%~~%K_g_kg,
+  Ctotal_g_100g_105%~~%pH,
+  Fe_g_Kg%~~%K_g_kg,
+  Fe_g_Kg%~~%Mg_g_kg,
+  Al_g_kg%~~%Fe_g_Kg,
+  Al_g_kg%~~%Ntotal_g_100g_105,
+  Mg_g_kg%~~%Ctotal_g_100g_105
+)
+summary(sem_top, .progressBar=F, standardize="range",conserve=TRUE)
+#write.csv(a$coefficients, "SEM_topsoil.csv")
+
+#Subsoil
+library(piecewiseSEM)
+sem_sub <- piecewiseSEM::psem(
+  lm(ECM_richness ~ pc1 + C_N_ratio + A_phosphorus_ppm_105 + 
+    Ntotal_g_100g_105 + SOM_per_corregido + MBC_mg_kg_105 + Ca_g_kg + 
+    Mg_g_kg +  Fe_g_Kg, data=SEM_df_sub),
+  lm(LSp_richness ~ pc1 + pH + A_phosphorus_ppm_105 + MBC_mg_kg_105 + 
+    Mg_g_kg + Fe_g_Kg + Zn_mg_Kg_105 + Ntotal_g_100g_105, data=SEM_df_sub),
+  lm(USp_richness ~ pc1 + pH + EC + C_N_ratio + NO3_mgL_105 + 
+    Nematode_g_105 + Ca_g_kg + Mg_g_kg + Na_g_kg +  
+    Fe_g_Kg + Zn_mg_Kg_105 + Cu_mg_Kg_105, data=SEM_df_sub),
+  lm(C_N_ratio ~pc1, data=SEM_df_sub),
+  C_N_ratio%~~%Mg_g_kg,
+  #C_N_ratio%~~%Al_g_kg,
+  C_N_ratio%~~%Fe_g_Kg,
+  C_N_ratio%~~%Zn_mg_Kg_105,
+  C_N_ratio%~~%Ntotal_g_100g_105,
+  C_N_ratio%~~%NO3_mgL_105,
+  C_N_ratio%~~%Cu_mg_Kg_105
+)
+summary(sem_sub, .progressBar=F, standardize="range",conserve=TRUE)
+#write.csv(b$coefficients, "SEM_subsoil.csv")
 ```
 
 ```{r RandomForest} 
@@ -1815,7 +1961,7 @@ RF_vars <- c("observed", "pH", "EC", "C_N_ratio",
               "NH4_mgL_105","NO3_mgL_105", 
               "Ntotal_g_100g_105", "Ctotal_g_100g_105", "Carbon_stock_Mg_ha",
               "Nitrogen_stock_Mg_ha", "SOM_per_corregido", "MBC_mg_kg_105",
-              "Nematode_g_105", "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
+              "Ca_g_kg", "K_g_kg","Mg_g_kg", "Na_g_kg", 
               "Al_g_kg", "Fe_g_Kg","Zn_mg_Kg_105", "Cu_mg_Kg_105")
 
 for_RF <- for_RF %>% filter(DEPTH=="topsoil")

@@ -13,9 +13,11 @@ output:
 
 *Part I*: selecting the studies for the meta-analysis
 
-```{r}
-#install.packages("metagear")
-pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs", "metagear")
+```{r Packages}
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs", "metagear", "metafor")
+
+devtools::install_github("daniel1noble/orchaRd", force = TRUE)
+library(orchaRd)
 ```
 
 ```{r}
@@ -26,30 +28,25 @@ BiocManager::install("EBImage")
 ```
 
 ```{r Read dataset}
-
 metadata_WOS <- Metaanalysis_dataset
 #metadata_2025 <- Metaanalysis_dataset_NEW2025
+Final_dataset <- Metaanalysis_dataset
 ```
 
 ```{r Dealing with duplicates}
 #We make sure that R finds titles that are duplicated despite how they are written:
-references_cleaned <- metadata_2025 %>%
+references_cleaned <- metadata_WOS %>%
   mutate(Title = str_to_lower(TITLE),  # Convert to lowercase
          Title = str_replace_all(Title, "[[:punct:]]", ""))  # Remove punctuation
 
 # See duplicated titles
-duplicates <- references_cleaned %>%
+duplicates <- metadata_WOS %>%
   dplyr::group_by(Title) %>%
   dplyr::filter(n() > 1)
 
 #Remove duplicates:
 references_cleaned <- references_cleaned %>%  
   dplyr::distinct(Title, .keep_all = TRUE)
-```
-
-```{r}
-metadata_WOS_2025 <- metadata_WOS %>%
-  dplyr::filter(Database_year=="Spain")
 ```
 
 ```{r Abstract screening}
@@ -155,31 +152,19 @@ ggplot(ma_dataset, aes(x=Study_Year, fill=Sample_type)) +
   labs(x = "Study year", y = "Count")
 ```
 
-### IMAGES DATA EXTRACTION
+#################### IMAGES DATA EXTRACTION
 
 ```{r}
 figure_scatterPlot(file="scatter_trial.png")
 ```
 
 ```{r Data}
-a <- X102_nmds_burnt
-b <- X102_nmds_control
-c <- X474_nmds_control
-d <- X403_2003_10_20
-e <- X403_control_2016_10_20
-f <- X403_control_2015_10_20
-g <- X403_control_2009_10_20
-h <- X403_control_2003_10_20
+a <- X188_nmds_burnt5
+b <- X188_nmds_control5
 ```
 
-```{r Euclidean distances}
+```{r Euclidean distances: ORDINATIONS}
 ## Dt (Distance within treatment group)
-t <- rbind(
-  a %>% mutate(group="2016_10_20"),
-  b %>% mutate(group="2015_10_20"),
-  c %>% mutate(group="2009_10_20"),
-  d %>% mutate(group="2003_10_20"))
-
 t_group <- a %>% 
   #dplyr::filter(group=="2016_10_20") %>% 
   dplyr::select(x,y)
@@ -190,13 +175,6 @@ Dt <- mean(as.vector(D))
 Dt
 
 ## Dc (Distance within control group)
-c <- rbind(
-  e %>% mutate(group="control_2016_10_20"),
-  f %>% mutate(group="control_2015_10_20"),
-  g %>% mutate(group="control_2009_10_20"),
-  h %>% mutate(group="control_2003_10_20")
-)
-
 c_group <- b %>%
   #dplyr::filter(group=="control_2016_10_20") %>% 
   dplyr::select(x,y)
@@ -213,7 +191,217 @@ Db <- mean(apply(pairs, 1, function(idx) {
 Db
 ```
 
+########################## DATABASE COMPLETED: DATA ANALYSIS ############################
 
+```{r COORDINATES}
+df_unique <- Metaanalysis_dataset %>%
+  distinct(Study_ID, .keep_all = TRUE)
+
+unique_coordinates <- df_unique %>%
+  dplyr::select(Study_ID, Latitude, Longitude)
+#write.csv(unique_coordinates, "coordinates_metaanalysis.csv")
+```
+
+```{r Descriptive statistics}
+df_unique %>%
+  dplyr::count(Research_type) %>%
+  arrange(desc(n))
+
+df_unique %>%
+  dplyr::filter(Research_type=="Field_experiment") %>%
+  dplyr::count(Guild_studied)
+
+df_counts_cross <- df_unique %>%
+  dplyr::count(Research_type, Guild_studied) %>%
+  dplyr::arrange(Research_type, desc(n))
+
+df_counts_cross$Research_type <- ordered(df_counts_cross$Research_type, levels=c("Descriptive", "Field_experiment", "Bioassay"))
+
+ggplot(df_counts_cross, aes(x = Research_type, y = n, fill = Guild_studied)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Study type", y = "Number of studies", fill = "Fungi group") +
+  theme_minimal(base_size = 14) +
+  scale_fill_brewer(palette = "Set2")
+#ggsave("research_type.png")
+
+allfungi_descrip <- df_unique %>%
+  dplyr::filter(Guild_studied=="All_fungi")
+
+allfungi_counts <- allfungi_descrip %>%
+  dplyr::count(Sample_type, Sequencing_type, Sequencing_device, Amplicon)
+
+ggplot(allfungi_counts, aes(x = Sample_type, y = n, fill = Sequencing_type)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Study type", y = "Number of studies", fill = "Fungi group") +
+  theme_minimal(base_size = 14) +
+  scale_fill_brewer(palette = "Set2")
+
+ggplot(df_unique, aes(x = Study_Year)) +
+  geom_histogram() 
+```
+
+1. "Treatments"
+   ├─ Burned vs Control
+   ├─ Fire_type (Prescribed fire/Wildfire)/ Fire_severity (UB, LS, HS1, HS2)
+   └─ 
+
+2. Covariables (categorical or continuous predictors)
+   ├─ Soil depth (0–10 cm, 10–20 cm)
+   ├─ Time since fire (months)
+   ├─ Sample type/sequencing method...
+   └─ Climatic region / biome
+
+3. Response variables (what we evaluate)
+   ├─ Abundance/richness
+   ├─ Diversity α / β
+   ├─ % colonization
+
+We are going to use the *metafor* package.
+
+Our database has to have:
+*yi*: size of the effect (SMD, log response ratio, etc.)
+*vi*: variance of the size of the effect
+*moderators*: e.g., ecosystem type, severity, time since fire...
+
+```{r Effect sizes: Hedge's d}
+#Although we have already calculated the effect sizes in Excel, we want to try to obtain the same result using the metafor package:
+
+########## STANDARDIZE MEAN DIFFERENCES ---> CALCULATION OF HEDGE'S D:
+
+Effectsizes <- Metaanalysis_dataset %>%
+  dplyr::filter(effect_size=="hedges_g")
+
+#intmean = Burnt_value
+#intsd = Burnt_SD
+#intn = N_burned
+#cmean = UB_value
+#csd = UB_SD
+#cn = N_control
+
+Effectsizes$Burnt_SD <- as.numeric(Effectsizes$Burnt_SD)
+Effectsizes$UB_SD       <- as.numeric(Effectsizes$UB_SD)
+
+Effectsizes <- escalc(measure="SMD", m1i = Burnt_value, sd1i = Burnt_SD, n1i = N_burned,
+                      m2i = UB_value, sd2i = UB_SD, n2i = N_control, data=Effectsizes) #We got an error saying there wasa negative value in one of the SD so we went back to the Excel dataset and corrected it
+
+#Our study with Hedge's d effect sizes is based on *315* entries
+```
+
+```{r Random/Mixed Effects models}
+#Richness <- Effectsizes %>%
+#  dplyr::filter(Response_var=="Richness")
+
+random_result <- rma(yi, vi, data = Effectsizes)
+summary(random_result)
+
+#Test for Heterogeneity: we are interested in this! If our p < 0.5 that's a check mark :)
+#I^2 (total heterogeneity / total variability):   78.08%
+#tau^2 (estimated amount of total heterogeneity): 0.8045 (SE = 0.0934) --> we should consider reporting this in our paper
+```
+
+```{r Influence check: OUTLIERS}
+infl <- influence(random_result) #With this function, we check whether there are any studies leveraging the model.
+infl$inf #We are going to go back to all those studies with an * in the inf column and check if there was some error
+#write.csv(as.data.frame(infl$inf), "influence.csv")
+```
+
+```{r Forest plot}
+forest.rma(random_result, slab = Effectsizes$Study_ID, header="study")
+```
+
+But maybe we are putting together things that are way to different... Maybe we should slice our dataset. *Tests of moderators* will tell us if this makes sense!!
+
+```{r Test of Moderators}
+#Test of Moderators = Q-BETWEEN. Are there significant differences between levels/groups?
+mod.researchtypeq <-rma(yi, vi, mods = ~ factor(Research_type), data= Effectsizes)
+mod.researchtypeq ###p-val = 0.2268 --> there are NOT significant differences between levels
+
+mod.guildstudiedq <-rma(yi, vi, mods = ~ factor(Guild_studied), data= Effectsizes)
+mod.guildstudiedq ###p-val = 0.0143
+
+mod.firetypeq <-rma(yi, vi, mods = ~ factor(Fire_type), data= Effectsizes)
+mod.firetypeq ### p-val = 0.2014 --> there are NOT significant differences between levels 
+
+mod.firesevq <-rma(yi, vi, mods = ~ factor(Fire_severity), data= Effectsizes)
+mod.firesevq ### p-val = 0.0006 --> SUPER SIGNIFICANT!!
+
+mod.timesincefireq <- rma(yi, vi, mods = ~ Time_since_fire_years, data=Effectsizes) #continuous moderator
+mod.timesincefireq ### p-val < .0001 --> SUPER SIGNIFICANT!!
+
+mod.biomeq <- rma(yi, vi, mods = ~ Biome, data=Effectsizes) #continuous moderator
+mod.biomeq
+
+mod.foresttypeq <- rma(yi, vi, mods = ~ Forest_type, data=Effectsizes) #continuous moderator
+mod.foresttypeq ### p-val = 0.7942 --> not significant at all
+
+mod.sampletypeq <- rma(yi, vi, mods = ~ Sample_type, data=Effectsizes) #continuous moderator
+mod.sampletypeq ### p-val = 0.0248 --> could be something to explore
+
+mod.depthq <- rma(yi, vi, mods = ~ Soil_samples_depth_cm, data=Effectsizes) #continuous moderator
+mod.depthq ### p-val = 0.1012 ---> Not significant but maybe we should try and make it a CONTINUOUS VARIABLE
+
+mod.responseq <- rma(yi, vi, mods = ~ Response_var, data=Effectsizes) #continuous moderator
+mod.responseq ### p-val = 0.0303 --> maybe it matters??
+
+#########################################################################################
+# Once we have done the previous models and seen which one of them is significant, now we can run the same model structure WITHOUT the intercept. This will allow us to extract the category means precisely for publication
+
+mod.firesev <-rma(yi, vi, mods = ~ factor(Fire_severity) -1, data= Effectsizes) ## -1 = WITHOUT INTERCEPT
+mod.firesev
+```
+
+```{r Moderators output}
+## For publication
+mod.grade_table <- coef(summary(mod.firetype))
+Firetype_mod <- Effectsizes %>%  ##number of "participants" in each group
+  dplyr::group_by(Fire_type) %>%
+  dplyr::summarise(nexp = sum(N_burned, na.rm = TRUE),
+                   nctrl = sum(N_control, na.rm = TRUE))
+Firetype_numcomp <- Effectsizes %>%
+  dplyr::count(Fire_type)
+Fire.type_finaldf <- cbind(Firetype_mod, Firetype_numcomp[c(2)], mod.grade_table)
+```
+
+```{r Categories}
+Bioassay_df <-  Effectsizes %>%
+  dplyr::filter(Research_type=="Bioassay")
+
+Descriptive_df <-  Effectsizes %>%
+  dplyr::filter(Research_type=="Descriptive")
+
+Field_experiment_df <-  Effectsizes %>%
+  dplyr::filter(Research_type=="Field_experiment")
+
+Allfungi_df <- Effectsizes %>%
+  dplyr::filter(Guild_studied=="All_fungi")
+
+ECM_df <- Effectsizes %>%
+  dplyr::filter(Guild_studied=="Mycorrhizal")
+
+Sporocarps_df <- Effectsizes %>%
+  dplyr::filter(Guild_studied=="Macrosporocarps")
+
+Soil_samples_df <- Effectsizes %>%
+  dplyr::filter(Sample_type=="Soil")
+```
+
+```{r Moderators models}
+mod.firesev <-rma(yi, vi, data= Soil_samples_df)
+mod.firesev
+```
+
+```{r Publication Bias}
+funnel(random_result) #we look for symmetry
+
+##Trim and fill analysis
+trimandfill <- trimfill(random_result)
+#Estimated number of missing studies on the right side: 0 (SE = 10.2953)
+trimandfill
+funnel(trimandfill)
+
+regtest(random_result)
+#Test for Funnel Plot Asymmetry: z = -6.3480, p < .0001
+```
 
 
 
