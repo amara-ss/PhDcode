@@ -264,11 +264,12 @@ Our database has to have:
 *moderators*: e.g., ecosystem type, severity, time since fire...
 
 ```{r Effect sizes: Hedge's d}
+
 #Although we have already calculated the effect sizes in Excel, we want to try to obtain the same result using the metafor package:
 
 ########## STANDARDIZE MEAN DIFFERENCES ---> CALCULATION OF HEDGE'S D:
 
-Effectsizes <- Metaanalysis_dataset %>%
+Effectsizes_df <- Metaanalysis_dataset %>%
   dplyr::filter(effect_size=="hedges_g")
 
 #intmean = Burnt_value
@@ -278,20 +279,17 @@ Effectsizes <- Metaanalysis_dataset %>%
 #csd = UB_SD
 #cn = N_control
 
-Effectsizes$Burnt_SD <- as.numeric(Effectsizes$Burnt_SD)
-Effectsizes$UB_SD       <- as.numeric(Effectsizes$UB_SD)
+Effectsizes_df$Burnt_SD <- as.numeric(Effectsizes_df$Burnt_SD)
+Effectsizes_df$UB_SD <- as.numeric(Effectsizes_df$UB_SD)
 
 Effectsizes <- escalc(measure="SMD", m1i = Burnt_value, sd1i = Burnt_SD, n1i = N_burned,
-                      m2i = UB_value, sd2i = UB_SD, n2i = N_control, data=Effectsizes) #We got an error saying there wasa negative value in one of the SD so we went back to the Excel dataset and corrected it
+                      m2i = UB_value, sd2i = UB_SD, n2i = N_control, data=Effectsizes_df) #We got an error saying there was a negative value in one of the SD so we went back to the Excel dataset and corrected it
 
 #Our study with Hedge's d effect sizes is based on *315* entries
 ```
 
 ```{r Random/Mixed Effects models}
-#Richness <- Effectsizes %>%
-#  dplyr::filter(Response_var=="Richness")
-
-random_result <- rma(yi, vi, data = Effectsizes)
+random_result <- rma(yi, vi, data = Effectsizes) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
 summary(random_result)
 
 #Test for Heterogeneity: we are interested in this! If our p < 0.5 that's a check mark :)
@@ -299,45 +297,95 @@ summary(random_result)
 #tau^2 (estimated amount of total heterogeneity): 0.8045 (SE = 0.0934) --> we should consider reporting this in our paper
 ```
 
+Here we computed all effect sizes together... But we should not mix saprotroph richness with ecm richness with shannon diersity...
+
+```{r Effect Sizes Categorization}
+
+All_fungi_richness <- Effectsizes %>%
+  dplyr::filter(Response_var=="Richness")
+All_fungi_result <- rma(yi, vi, data = All_fungi_richness) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(All_fungi_result)
+funnel(All_fungi_result)
+
+All_fungi_alpha <- Effectsizes %>%
+  dplyr::filter(Response_var %in% c("Shannon_diversity", "Simpson_diveristy", "Chao1", "Evenness"))
+All_alpha_result <- rma(yi, vi, data = All_fungi_alpha) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(All_alpha_result)
+
+All_fungi_shannon <- Effectsizes %>%
+  dplyr::filter(Response_var=="Shannon_diversity")
+All_fungi_result <- rma(yi, vi, data = All_fungi_shannon) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(All_fungi_result)
+
+ECM_richness <- Effectsizes %>%
+  dplyr::filter(Response_var %in% c("ECM_Richness", "ECM_abun", "ECM_rel_abun"))
+ECM_result <- rma(yi, vi, data = ECM_richness) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(ECM_result)
+
+ECM_alpha <- Effectsizes %>%
+  dplyr::filter(Response_var %in% c("ECM_Chao1", "ECM_Shannon_diversity", "ECM_Simpson_diversity"))
+ECM_result <- rma(yi, vi, data = ECM_alpha) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(ECM_result)
+
+ECM_col <- Effectsizes %>%
+  dplyr::filter(Response_var == "Colonization_per")
+ECM_result <- rma(yi, vi, data = ECM_col) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(ECM_result)
+
+Saprotrophs_richness <- Effectsizes %>%
+  dplyr::filter(Response_var %in% c("Saprotroph_richness", "Saprotroph_abun", "Saprotroph_rel_abun"))
+Saprotrophs_result <- rma(yi, vi, data = Saprotrophs_richness) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(Saprotrophs_result)
+
+Saprotrophs_alpha <- Effectsizes %>%
+  dplyr::filter(Response_var == "Saprotroph_shannon")
+Saprotrophs_result <- rma(yi, vi, data = Saprotrophs_alpha) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(Saprotrophs_result)
+
+Sporocarps_abun <- Effectsizes %>%
+  dplyr::filter(Response_var == "Abundance")
+Sporocarp_result <- rma(yi, vi, data = Sporocarps_abun)
+summary(Sporocarp_result)
+```
+
 ```{r Influence check: OUTLIERS}
-infl <- influence(random_result) #With this function, we check whether there are any studies leveraging the model.
+infl <- influence(All_fungi_result) #With this function, we check whether there are any studies leveraging the model.
 infl$inf #We are going to go back to all those studies with an * in the inf column and check if there was some error
 #write.csv(as.data.frame(infl$inf), "influence.csv")
 ```
 
 ```{r Forest plot}
-forest.rma(random_result, slab = Effectsizes$Study_ID, header="study")
+png("ECM_richness_forest_plot.png", width = 2000, height = 3000, res = 300)
+forest.rma(Sporocarp_result, slab = Sporocarps_abun$Study_ID, header="study")
+dev.off()
 ```
 
 But maybe we are putting together things that are way to different... Maybe we should slice our dataset. *Tests of moderators* will tell us if this makes sense!!
 
 ```{r Test of Moderators}
 #Test of Moderators = Q-BETWEEN. Are there significant differences between levels/groups?
-mod.researchtypeq <-rma(yi, vi, mods = ~ factor(Research_type), data= Effectsizes)
+mod.researchtypeq <-rma(yi, vi, mods = ~ factor(Research_type), data= Saprotrophs_alpha)
 mod.researchtypeq ###p-val = 0.2268 --> there are NOT significant differences between levels
 
-mod.guildstudiedq <-rma(yi, vi, mods = ~ factor(Guild_studied), data= Effectsizes)
-mod.guildstudiedq ###p-val = 0.0143
-
-mod.firetypeq <-rma(yi, vi, mods = ~ factor(Fire_type), data= Effectsizes)
+mod.firetypeq <-rma(yi, vi, mods = ~ factor(Fire_type), data= Saprotrophs_alpha)
 mod.firetypeq ### p-val = 0.2014 --> there are NOT significant differences between levels 
 
-mod.firesevq <-rma(yi, vi, mods = ~ factor(Fire_severity), data= Effectsizes)
+mod.firesevq <-rma(yi, vi, mods = ~ factor(Fire_severity), data= Saprotrophs_alpha)
 mod.firesevq ### p-val = 0.0006 --> SUPER SIGNIFICANT!!
 
-mod.timesincefireq <- rma(yi, vi, mods = ~ Time_since_fire_years, data=Effectsizes) #continuous moderator
+mod.timesincefireq <- rma(yi, vi, mods = ~ Time_since_fire_months, data=All_fungi_alpha) #continuous moderator
 mod.timesincefireq ### p-val < .0001 --> SUPER SIGNIFICANT!!
 
-mod.biomeq <- rma(yi, vi, mods = ~ Biome, data=Effectsizes) #continuous moderator
+mod.biomeq <- rma(yi, vi, mods = ~ Biome, data=Saprotrophs_alpha) 
 mod.biomeq
 
-mod.foresttypeq <- rma(yi, vi, mods = ~ Forest_type, data=Effectsizes) #continuous moderator
+mod.foresttypeq <- rma(yi, vi, mods = ~ Forest_type, data=Saprotrophs_alpha) 
 mod.foresttypeq ### p-val = 0.7942 --> not significant at all
 
-mod.sampletypeq <- rma(yi, vi, mods = ~ Sample_type, data=Effectsizes) #continuous moderator
+mod.sampletypeq <- rma(yi, vi, mods = ~ Sample_type, data=Saprotrophs_alpha) 
 mod.sampletypeq ### p-val = 0.0248 --> could be something to explore
 
-mod.depthq <- rma(yi, vi, mods = ~ Soil_samples_depth_cm, data=Effectsizes) #continuous moderator
+mod.depthq <- rma(yi, vi, mods = ~ Soil_samples_depth_cm, data=Saprotrophs_alpha) #continuous moderator
 mod.depthq ### p-val = 0.1012 ---> Not significant but maybe we should try and make it a CONTINUOUS VARIABLE
 
 mod.responseq <- rma(yi, vi, mods = ~ Response_var, data=Effectsizes) #continuous moderator
@@ -346,8 +394,114 @@ mod.responseq ### p-val = 0.0303 --> maybe it matters??
 #########################################################################################
 # Once we have done the previous models and seen which one of them is significant, now we can run the same model structure WITHOUT the intercept. This will allow us to extract the category means precisely for publication
 
-mod.firesev <-rma(yi, vi, mods = ~ factor(Fire_severity) -1, data= Effectsizes) ## -1 = WITHOUT INTERCEPT
+mod.firesev <-rma(yi, vi, mods = ~ factor(Time_since_fire_months) -1, data= All_fungi_richness) ## -1 = WITHOUT INTERCEPT
 mod.firesev
+```
+
+We can go a step further and carry out a *MULTI-LEVEL MODEL* --> this is the kind of model we use when we have multiple effect sizes from the same study
+
+```{r Multi-level models}
+ECM_richness_multilevel <- rma.mv(yi = yi, V = vi, 
+                                  random = ~ 1 | Study_ID/Sample_type, #With this structure we indicate NESTED random effect
+                                  mods = ~Fire_type-1,
+                                  data = ECM_richness)
+summary(ECM_richness_multilevel)
+```
+
+```{r Orchard and catepillar plots}
+## PLOT 
+a<- orchaRd:: orchard_plot(sap_alpha_multilevel, mod = "1",
+  group="Study_ID", alpha = 0.5, xlab="Hedge's g")+
+  #annotate(geom="text", x= 0.80, y= 1, label= paste0("italic(I)^{2} == ", round(I2[1],4), "*\"%\""), 
+  scale_fill_manual(values="#dd3497")+
+  scale_colour_manual(values="#dd3497")
+
+
+# We can visualise the results of the meta-analysis using a caterpillar plot
+b <- orchaRd::caterpillars(sap_alpha_multilevel, mod="1", 
+                      xlab = "Effect size (Hedge's g)",group="Study_ID",
+                      colpoint = "grey30",colerrorbar = "#ae017e")
+
+combined <- (b + a)
+#ggsave("combined_sap_alpha.png", width = 10, height = 6, dpi = 300)
+
+##################### FIRE SEVERITY #############################
+
+res <- orchaRd::mod_results(sap_richness_multilevel, mod = "Fire_severity", group = "Study_ID")
+res
+res1 <- orchaRd::mod_results(sap_richness_multilevel, mod="Fire_severity", group = "Study_ID", at=list("Fire_severity" = "Low_severity"), subset = TRUE )
+res1
+res2 <- orchaRd::mod_results(sap_richness_multilevel, mod="Fire_severity", group = "Study_ID", at=list("Fire_severity" = "Moderate_severity"), subset = TRUE )
+res2
+res3 <- orchaRd::mod_results(sap_richness_multilevel, mod="Fire_severity", group = "Study_ID", at=list("Fire_severity" = "High_severity"), subset = TRUE )
+res3
+
+LS <- orchaRd::orchard_plot(res1, 
+                   mod = "Fire_severity", group = "Study_ID", xlab = "Hedge's g", alpha = .6) +
+  scale_fill_manual(values="#fec44f")+
+  scale_colour_manual(values="#fec44f")
+MS <- orchaRd::orchard_plot(res2, 
+                   mod = "Fire_severity", group = "Study_ID", xlab = "Hedge's g", alpha = .6) +
+  scale_fill_manual(values="#fd8d3c")+
+  scale_colour_manual(values="#fd8d3c")
+HS <- orchaRd::orchard_plot(res3,
+                  mod = "Fire_severity", group = "Study_ID", xlab = "Hedge's g", alpha = .6) +
+  scale_fill_manual(values="#ef3b2c")+
+  scale_colour_manual(values="#ef3b2c")
+
+combines_sev <- (LS / MS / HS)
+#ggsave("sev_sap_richness.png", width = 10, height = 6, dpi = 300)
+
+##################### FIRE TYPE  #############################
+
+res <- orchaRd::mod_results(ECM_richness_multilevel, mod = "Fire_type", group = "Study_ID", at=list("Fire_type" = "Prescribed_fire"), subset = TRUE )
+res
+res1 <- orchaRd::mod_results(ECM_richness_multilevel, mod="Fire_type", group = "Study_ID", at=list("Fire_type" = "Wildfire"), subset = TRUE )
+res1
+
+WF <- orchaRd::orchard_plot(res1, 
+                   mod = "Fire_type", group = "Study_ID", xlab = "Hedge's g", alpha = .6) +
+  scale_fill_manual(values="#6a51a3")+
+  scale_colour_manual(values="#6a51a3")
+PF <- orchaRd::orchard_plot(res, 
+                   mod = "Fire_type", group = "Study_ID", xlab = "Hedge's g", alpha = .6) +
+  scale_fill_manual(values="#1d91c0")+
+  scale_colour_manual(values="#1d91c0")
+
+combined_ft <- (WF/PF)
+#ggsave("ft_sap_alpha.png", width = 10, height = 6, dpi = 300)
+
+##################### SOIL DEPTH  #############################
+
+res <- orchaRd::mod_results(All_richness_multilevel, mod = "Soil_samples_depth_cm", group = "Study_ID", at=list("Soil_samples_depth_cm" = "Prescribed_fire"), subset = TRUE )
+res
+res1 <- orchaRd::mod_results(All_richness_multilevel, mod="Soil_samples_depth_cm", group = "Study_ID", at=list("Soil_samples_depth_cm" = "Wildfire"), subset = TRUE )
+res1
+
+WF <- orchaRd::orchard_plot(res1, 
+                   mod = "Fire_type", group = "Study_ID", xlab = "Hedge's g", alpha = .6) +
+  scale_fill_manual(values="#6a51a3")+
+  scale_colour_manual(values="#6a51a3")
+PF <- orchaRd::orchard_plot(res, 
+                   mod = "Fire_type", group = "Study_ID", xlab = "Hedge's g", alpha = .6) +
+  scale_fill_manual(values="#1d91c0")+
+  scale_colour_manual(values="#1d91c0")
+
+combined_ft <- (WF/PF)
+#ggsave("ft_sap_alpha.png", width = 10, height = 6, dpi = 300)
+```
+
+```{r}
+ggplot(All_fungi_alpha, aes(x = Time_since_fire_years, y = yi)) +
+  geom_point(size = 2, color = "darkgreen") +          # points for each study
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +  # regression line with CI
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + # reference line
+  labs(
+    x = "Time since fire (months)",
+    y = "Effect size (SMD, Burned − Unburned)",
+    title = "Meta-regression: Saprotroph alpha vs time since fire"
+  ) +
+  theme_minimal(base_size = 14)
 ```
 
 ```{r Moderators output}
@@ -391,7 +545,7 @@ mod.firesev
 ```
 
 ```{r Publication Bias}
-funnel(random_result) #we look for symmetry
+funnel(ECM_result) #we look for symmetry
 
 ##Trim and fill analysis
 trimandfill <- trimfill(random_result)

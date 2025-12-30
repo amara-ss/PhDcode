@@ -213,7 +213,7 @@ alpha_fungi$TRAT2 <- ordered(alpha_fungi$TRAT2, levels=c("UB", "LS", "HS1", "HS2
 alpha_fungi$DEPTH <- ordered(alpha_fungi$DEPTH, levels=c("topsoil", "subsoil"))
 
 ### Visually assessment of data
-var <- (alpha_fungi$dominance_dbp)
+var <- (alpha_fungi$observed)
 
 hist(var) 
 
@@ -1840,7 +1840,8 @@ sem_top_all <- piecewiseSEM::psem(
   MBC_mg_kg_105%~~%NH4_mgL_105,
   pH%~~%K_g_kg
 )
-summary(sem_top_all)
+d <- (summary(sem_top_all, .progressBar=F, standardize="range",conserve=TRUE))
+write.csv(d$coefficients, "SEM_topsoil_all.csv")
 
 #Subsoil
 library(piecewiseSEM)
@@ -1854,7 +1855,9 @@ sem_sub_all <- piecewiseSEM::psem(
   MBC_mg_kg_105%~~%C_N_ratio
   #pH%~~%K_g_kg
 )
-summary(sem_sub_all)
+c <- (summary(sem_sub_all, .progressBar=F, standardize="range",conserve=TRUE))
+c$coefficients
+write.csv(c$coefficients, "SEM_subsoil_all.csv")
 
 ################################### GUILDS ##############################################
 ## We want to know what influences most ectomycorrhizal richness vs saprotrophs richness 
@@ -1923,7 +1926,7 @@ sem_top <- piecewiseSEM::psem(
   Al_g_kg%~~%Ntotal_g_100g_105,
   Mg_g_kg%~~%Ctotal_g_100g_105
 )
-summary(sem_top, .progressBar=F, standardize="range",conserve=TRUE)
+a <- (summary(sem_top, .progressBar=F, standardize="range",conserve=TRUE))
 #write.csv(a$coefficients, "SEM_topsoil.csv")
 
 #Subsoil
@@ -1946,8 +1949,8 @@ sem_sub <- piecewiseSEM::psem(
   C_N_ratio%~~%NO3_mgL_105,
   C_N_ratio%~~%Cu_mg_Kg_105
 )
-summary(sem_sub, .progressBar=F, standardize="range",conserve=TRUE)
-#write.csv(b$coefficients, "SEM_subsoil.csv")
+b <- (summary(sem_sub, .progressBar=F, standardize="range",conserve=TRUE))
+write.csv(b$coefficients, "SEM_subsoil.csv")
 ```
 
 ```{r RandomForest} 
