@@ -14,10 +14,9 @@ output:
 *Part I*: selecting the studies for the meta-analysis
 
 ```{r Packages}
-pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs", "metagear", "metafor")
+#devtools::install_github("daniel1noble/orchaRd", ref = "main", force = TRUE)
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs", "metagear", "metafor", "orchaRd")
 
-devtools::install_github("daniel1noble/orchaRd", force = TRUE)
-library(orchaRd)
 ```
 
 ```{r}
@@ -28,7 +27,7 @@ BiocManager::install("EBImage")
 ```
 
 ```{r Read dataset}
-metadata_WOS <- Metaanalysis_dataset
+metadata_WOS <- Metaanalysis_ArticleSelection
 #metadata_2025 <- Metaanalysis_dataset_NEW2025
 Final_dataset <- Metaanalysis_dataset
 ```
@@ -40,7 +39,7 @@ references_cleaned <- metadata_WOS %>%
          Title = str_replace_all(Title, "[[:punct:]]", ""))  # Remove punctuation
 
 # See duplicated titles
-duplicates <- metadata_WOS %>%
+duplicates <- references_cleaned %>%
   dplyr::group_by(Title) %>%
   dplyr::filter(n() > 1)
 
@@ -159,8 +158,8 @@ figure_scatterPlot(file="scatter_trial.png")
 ```
 
 ```{r Data}
-a <- X188_nmds_burnt5
-b <- X188_nmds_control5
+a <- X107_rda_burnt
+b <- X107_rda_control
 ```
 
 ```{r Euclidean distances: ORDINATIONS}
@@ -172,7 +171,10 @@ t_group <- a %>%
 #plot(t_group$x, t_group$y)
 D <- dist(t_group, method="euclidean")
 Dt <- mean(as.vector(D))
+SD_Dt <- sd(as.vector(D))
 Dt
+SD_Dt
+
 
 ## Dc (Distance within control group)
 c_group <- b %>%
@@ -181,14 +183,21 @@ c_group <- b %>%
 
 D <- dist(c_group, method="euclidean")
 Dc <- mean(as.vector(D))
+SD_Dc <- sd(as.vector(D))
 Dc
+SD_Dc
+
 
 ## Db (Distance between groups)
 pairs <- expand.grid(1:nrow(c_group), 1:nrow(t_group))
-Db <- mean(apply(pairs, 1, function(idx) {
+Db_vals <- apply(pairs, 1, function(idx) {
   sqrt(sum((c_group[idx[1],] - t_group[idx[2],])^2))
-}))
+})
+Db <- mean(Db_vals)
+SD_Db <- sd(Db_vals)
 Db
+SD_Db
+
 ```
 
 ########################## DATABASE COMPLETED: DATA ANALYSIS ############################
@@ -305,7 +314,6 @@ All_fungi_richness <- Effectsizes %>%
   dplyr::filter(Response_var=="Richness")
 All_fungi_result <- rma(yi, vi, data = All_fungi_richness) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
 summary(All_fungi_result)
-funnel(All_fungi_result)
 
 All_fungi_alpha <- Effectsizes %>%
   dplyr::filter(Response_var %in% c("Shannon_diversity", "Simpson_diveristy", "Chao1", "Evenness"))
@@ -346,6 +354,19 @@ Sporocarps_abun <- Effectsizes %>%
   dplyr::filter(Response_var == "Abundance")
 Sporocarp_result <- rma(yi, vi, data = Sporocarps_abun)
 summary(Sporocarp_result)
+```
+
+```{r Publication Bias}
+funnel(All_alpha_result) #we look for symmetry
+
+##Trim and fill analysis
+trimandfill <- trimfill(All_alpha_result)
+#Estimated number of missing studies on the right side: 0 (SE = 10.2953)
+trimandfill
+funnel(trimandfill)
+
+regtest(All_alpha_result)
+#Test for Funnel Plot Asymmetry: z = -6.3480, p < .0001 #This SIGNIFICANCE means our funnel plot is ASYMMETRICAL
 ```
 
 ```{r Influence check: OUTLIERS}
@@ -398,14 +419,26 @@ mod.firesev <-rma(yi, vi, mods = ~ factor(Time_since_fire_months) -1, data= All_
 mod.firesev
 ```
 
+```{r Moderators output}
+## For publication
+mod.grade_table <- coef(summary(mod.firetype))
+Firetype_mod <- Effectsizes %>%  ##number of "participants" in each group
+  dplyr::group_by(Fire_type) %>%
+  dplyr::summarise(nexp = sum(N_burned, na.rm = TRUE),
+                   nctrl = sum(N_control, na.rm = TRUE))
+Firetype_numcomp <- Effectsizes %>%
+  dplyr::count(Fire_type)
+Fire.type_finaldf <- cbind(Firetype_mod, Firetype_numcomp[c(2)], mod.grade_table)
+```
+
 We can go a step further and carry out a *MULTI-LEVEL MODEL* --> this is the kind of model we use when we have multiple effect sizes from the same study
 
 ```{r Multi-level models}
-ECM_richness_multilevel <- rma.mv(yi = yi, V = vi, 
+All_richness_multilevel <- rma.mv(yi = yi, V = vi, 
                                   random = ~ 1 | Study_ID/Sample_type, #With this structure we indicate NESTED random effect
-                                  mods = ~Fire_type-1,
-                                  data = ECM_richness)
-summary(ECM_richness_multilevel)
+                                  #mods = ~Time_since_fire_years-1,
+                                  data = All_fungi_richness)
+summary(All_richness_multilevel)
 ```
 
 ```{r Orchard and catepillar plots}
@@ -452,11 +485,24 @@ HS <- orchaRd::orchard_plot(res3,
 combines_sev <- (LS / MS / HS)
 #ggsave("sev_sap_richness.png", width = 10, height = 6, dpi = 300)
 
+LS <- orchaRd::caterpillars(res1, 
+                   mod = "Fire_severity", group = "Study_ID", xlab = "Hedge's g",
+                   colpoint = "#fec44f",colerrorbar = "grey30")
+MS <- orchaRd::caterpillars(res2, 
+                   mod = "Fire_severity", group = "Study_ID", xlab = "Hedge's g",
+                   colpoint = "#d94801",colerrorbar = "grey30")
+HS <- orchaRd::caterpillars(res3,
+                  mod = "Fire_severity", group = "Study_ID", xlab = "Hedge's g",
+                   colpoint = "#67000d",colerrorbar = "grey30")
+
+combines_sev <- (LS / MS / HS)
+ggsave("sev_sap_richness.png", width = 6, height = 5, dpi = 300)
+
 ##################### FIRE TYPE  #############################
 
-res <- orchaRd::mod_results(ECM_richness_multilevel, mod = "Fire_type", group = "Study_ID", at=list("Fire_type" = "Prescribed_fire"), subset = TRUE )
+res <- orchaRd::mod_results(sap_richness_multilevel, mod = "Fire_type", group = "Study_ID", at=list("Fire_type" = "Prescribed_fire"), subset = TRUE )
 res
-res1 <- orchaRd::mod_results(ECM_richness_multilevel, mod="Fire_type", group = "Study_ID", at=list("Fire_type" = "Wildfire"), subset = TRUE )
+res1 <- orchaRd::mod_results(sap_richness_multilevel, mod="Fire_type", group = "Study_ID", at=list("Fire_type" = "Wildfire"), subset = TRUE )
 res1
 
 WF <- orchaRd::orchard_plot(res1, 
@@ -470,73 +516,34 @@ PF <- orchaRd::orchard_plot(res,
 
 combined_ft <- (WF/PF)
 #ggsave("ft_sap_alpha.png", width = 10, height = 6, dpi = 300)
+
+
+WF <- orchaRd::caterpillars(res1, 
+                   mod = "Fire_type", group = "Study_ID", xlab = "Hedge's g",
+                   colpoint = "#6a51a3",colerrorbar = "grey30")
+PF <- orchaRd::caterpillars(res, 
+                   mod = "Fire_type", group = "Study_ID", xlab = "Hedge's g",
+                   colpoint = "#1d91c0",colerrorbar = "grey30")
+
+combined_ft <- (WF/PF)
+ggsave("ft_sap_richness.png", width = 10, height = 6, dpi = 300)
 
 ##################### SOIL DEPTH  #############################
 
-res <- orchaRd::mod_results(All_richness_multilevel, mod = "Soil_samples_depth_cm", group = "Study_ID", at=list("Soil_samples_depth_cm" = "Prescribed_fire"), subset = TRUE )
-res
-res1 <- orchaRd::mod_results(All_richness_multilevel, mod="Soil_samples_depth_cm", group = "Study_ID", at=list("Soil_samples_depth_cm" = "Wildfire"), subset = TRUE )
-res1
 
-WF <- orchaRd::orchard_plot(res1, 
-                   mod = "Fire_type", group = "Study_ID", xlab = "Hedge's g", alpha = .6) +
-  scale_fill_manual(values="#6a51a3")+
-  scale_colour_manual(values="#6a51a3")
-PF <- orchaRd::orchard_plot(res, 
-                   mod = "Fire_type", group = "Study_ID", xlab = "Hedge's g", alpha = .6) +
-  scale_fill_manual(values="#1d91c0")+
-  scale_colour_manual(values="#1d91c0")
-
-combined_ft <- (WF/PF)
-#ggsave("ft_sap_alpha.png", width = 10, height = 6, dpi = 300)
 ```
 
 ```{r}
-ggplot(All_fungi_alpha, aes(x = Time_since_fire_years, y = yi)) +
+ggplot(Saprotrophs_alpha, aes(x = Time_since_fire_months, y = yi)) +
   geom_point(size = 2, color = "darkgreen") +          # points for each study
   geom_smooth(method = "lm", se = TRUE, color = "blue") +  # regression line with CI
   geom_hline(yintercept = 0, linetype = "dashed", color = "red") + # reference line
   labs(
     x = "Time since fire (months)",
     y = "Effect size (SMD, Burned − Unburned)",
-    title = "Meta-regression: Saprotroph alpha vs time since fire"
+    title = "Meta-regression: Saprotrophs richness vs time since fire"
   ) +
   theme_minimal(base_size = 14)
-```
-
-```{r Moderators output}
-## For publication
-mod.grade_table <- coef(summary(mod.firetype))
-Firetype_mod <- Effectsizes %>%  ##number of "participants" in each group
-  dplyr::group_by(Fire_type) %>%
-  dplyr::summarise(nexp = sum(N_burned, na.rm = TRUE),
-                   nctrl = sum(N_control, na.rm = TRUE))
-Firetype_numcomp <- Effectsizes %>%
-  dplyr::count(Fire_type)
-Fire.type_finaldf <- cbind(Firetype_mod, Firetype_numcomp[c(2)], mod.grade_table)
-```
-
-```{r Categories}
-Bioassay_df <-  Effectsizes %>%
-  dplyr::filter(Research_type=="Bioassay")
-
-Descriptive_df <-  Effectsizes %>%
-  dplyr::filter(Research_type=="Descriptive")
-
-Field_experiment_df <-  Effectsizes %>%
-  dplyr::filter(Research_type=="Field_experiment")
-
-Allfungi_df <- Effectsizes %>%
-  dplyr::filter(Guild_studied=="All_fungi")
-
-ECM_df <- Effectsizes %>%
-  dplyr::filter(Guild_studied=="Mycorrhizal")
-
-Sporocarps_df <- Effectsizes %>%
-  dplyr::filter(Guild_studied=="Macrosporocarps")
-
-Soil_samples_df <- Effectsizes %>%
-  dplyr::filter(Sample_type=="Soil")
 ```
 
 ```{r Moderators models}
@@ -544,19 +551,40 @@ mod.firesev <-rma(yi, vi, data= Soil_samples_df)
 mod.firesev
 ```
 
-```{r Publication Bias}
-funnel(ECM_result) #we look for symmetry
+```{r Effect sizes: RR}
 
-##Trim and fill analysis
-trimandfill <- trimfill(random_result)
-#Estimated number of missing studies on the right side: 0 (SE = 10.2953)
-trimandfill
-funnel(trimandfill)
+ordinations_effectsizes <- Metaanalysis_dataset
 
-regtest(random_result)
-#Test for Funnel Plot Asymmetry: z = -6.3480, p < .0001
+RRstructure_df <- ordinations_effectsizes[,-37]
+RRbeta_df <- ordinations_effectsizes[,-36]
+
+#RRstructure_df$vi <- 1  # pseudo-variance
+#RRbeta_df$vi <- 1
+
+RRstructure_multilevel <- rma.mv(yi = RRstructure,
+                        V = diag(nrow(RRstructure_df)),  # pseudo-variances
+                        random = ~ 1 | Study_ID,
+                        data = RRstructure_df,
+                        method = "REML")
+
+summary(RRstructure_multilevel)
+
+hist(RRstructure_df$RRstructure)
+boxplot(RRstructure_df$RRstructure ~ RRstructure_df$Study_ID)
+
+RRbeta_multilevel <- rma.mv(yi = RRbeta,
+                        V = diag(nrow(RRbeta_df)),  # pseudo-variances
+                        random = ~ 1 | Study_ID,
+                        data = RRbeta_df,
+                        method = "REML")
+
+summary(RRbeta_multilevel)
+
+hist(RRstructure_df$RRstructure)
+boxplot(RRstructure_df$RRstructure ~ RRstructure_df$Study_ID)
+
+
 ```
-
 
 
 
