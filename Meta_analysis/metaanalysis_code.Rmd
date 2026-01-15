@@ -151,15 +151,15 @@ ggplot(ma_dataset, aes(x=Study_Year, fill=Sample_type)) +
   labs(x = "Study year", y = "Count")
 ```
 
-#################### IMAGES DATA EXTRACTION
+#################### IMAGES DATA EXTRACTION ####################################
 
 ```{r}
 figure_scatterPlot(file="scatter_trial.png")
 ```
 
 ```{r Data}
-a <- X107_rda_burnt
-b <- X107_rda_control
+a <- X452_pcoa_10_30
+b <- X452_control_10_30
 ```
 
 ```{r Euclidean distances: ORDINATIONS}
@@ -202,6 +202,12 @@ SD_Db
 
 ########################## DATABASE COMPLETED: DATA ANALYSIS ############################
 
+```{r Databases}
+means_df <- Metaanalysis_dataset
+
+ordinations_df <- Metaanalysis_dataset #ordination_data
+```
+
 ```{r COORDINATES}
 df_unique <- Metaanalysis_dataset %>%
   distinct(Study_ID, .keep_all = TRUE)
@@ -212,9 +218,14 @@ unique_coordinates <- df_unique %>%
 ```
 
 ```{r Descriptive statistics}
-df_unique %>%
-  dplyr::count(Research_type) %>%
+means_df %>%
+  dplyr::count(Forest_type) %>%
   arrange(desc(n))
+
+means_df$effect_size <- ordered(means_df$effect_size, levels=c("hedges_g", "RR", "logRR"))
+
+ggplot(means_df, aes(x=Biome, fill=Biome)) +
+  geom_histogram(stat="count")
 
 df_unique %>%
   dplyr::filter(Research_type=="Field_experiment") %>%
@@ -278,7 +289,7 @@ Our database has to have:
 
 ########## STANDARDIZE MEAN DIFFERENCES ---> CALCULATION OF HEDGE'S D:
 
-Effectsizes_df <- Metaanalysis_dataset %>%
+Effectsizes_df <- means_df %>%
   dplyr::filter(effect_size=="hedges_g")
 
 #intmean = Burnt_value
@@ -308,32 +319,16 @@ summary(random_result)
 
 Here we computed all effect sizes together... But we should not mix saprotroph richness with ecm richness with shannon diersity...
 
-```{r Effect Sizes Categorization}
+```{r Hedges'g effect sizes categorization}
 
 All_fungi_richness <- Effectsizes %>%
   dplyr::filter(Response_var=="Richness")
+
 All_fungi_result <- rma(yi, vi, data = All_fungi_richness) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
 summary(All_fungi_result)
 
-All_fungi_alpha <- Effectsizes %>%
-  dplyr::filter(Response_var %in% c("Shannon_diversity", "Simpson_diveristy", "Chao1", "Evenness"))
-All_alpha_result <- rma(yi, vi, data = All_fungi_alpha) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
-summary(All_alpha_result)
-
-All_fungi_shannon <- Effectsizes %>%
-  dplyr::filter(Response_var=="Shannon_diversity")
-All_fungi_result <- rma(yi, vi, data = All_fungi_shannon) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
-summary(All_fungi_result)
-
 ECM_richness <- Effectsizes %>%
-  dplyr::filter(Response_var %in% c("ECM_Richness", "ECM_abun", "ECM_rel_abun"))
-ECM_result <- rma(yi, vi, data = ECM_richness) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
-summary(ECM_result)
-
-ECM_alpha <- Effectsizes %>%
-  dplyr::filter(Response_var %in% c("ECM_Chao1", "ECM_Shannon_diversity", "ECM_Simpson_diversity"))
-ECM_result <- rma(yi, vi, data = ECM_alpha) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
-summary(ECM_result)
+  dplyr::filter(Response_var=="ECM_Richness")
 
 ECM_col <- Effectsizes %>%
   dplyr::filter(Response_var == "Colonization_per")
@@ -341,31 +336,22 @@ ECM_result <- rma(yi, vi, data = ECM_col) #yi = EFFECT SIZE; vi = VARIANCE OF TH
 summary(ECM_result)
 
 Saprotrophs_richness <- Effectsizes %>%
-  dplyr::filter(Response_var %in% c("Saprotroph_richness", "Saprotroph_abun", "Saprotroph_rel_abun"))
-Saprotrophs_result <- rma(yi, vi, data = Saprotrophs_richness) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
-summary(Saprotrophs_result)
-
-Saprotrophs_alpha <- Effectsizes %>%
-  dplyr::filter(Response_var == "Saprotroph_shannon")
-Saprotrophs_result <- rma(yi, vi, data = Saprotrophs_alpha) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
-summary(Saprotrophs_result)
+  dplyr::filter(Response_var=="Saprotroph_richness")
 
 Sporocarps_abun <- Effectsizes %>%
-  dplyr::filter(Response_var == "Abundance")
-Sporocarp_result <- rma(yi, vi, data = Sporocarps_abun)
-summary(Sporocarp_result)
+  dplyr::filter(Response_var == "Sporocarp_Abundance")
 ```
 
 ```{r Publication Bias}
-funnel(All_alpha_result) #we look for symmetry
+funnel(All_fungi_result) #we look for symmetry
 
 ##Trim and fill analysis
-trimandfill <- trimfill(All_alpha_result)
+trimandfill <- trimfill(All_fungi_result)
 #Estimated number of missing studies on the right side: 0 (SE = 10.2953)
 trimandfill
 funnel(trimandfill)
 
-regtest(All_alpha_result)
+regtest(All_fungi_result)
 #Test for Funnel Plot Asymmetry: z = -6.3480, p < .0001 #This SIGNIFICANCE means our funnel plot is ASYMMETRICAL
 ```
 
@@ -377,7 +363,7 @@ infl$inf #We are going to go back to all those studies with an * in the inf colu
 
 ```{r Forest plot}
 png("ECM_richness_forest_plot.png", width = 2000, height = 3000, res = 300)
-forest.rma(Sporocarp_result, slab = Sporocarps_abun$Study_ID, header="study")
+forest.rma(All_fungi_result, slab = All_fungi_richness$Study_ID, header="study")
 dev.off()
 ```
 
@@ -534,7 +520,7 @@ ggsave("ft_sap_richness.png", width = 10, height = 6, dpi = 300)
 ```
 
 ```{r}
-ggplot(Saprotrophs_alpha, aes(x = Time_since_fire_months, y = yi)) +
+ggplot(RR_ECM, aes(x = Time_since_fire_months, y = RRbeta)) +
   geom_point(size = 2, color = "darkgreen") +          # points for each study
   geom_smooth(method = "lm", se = TRUE, color = "blue") +  # regression line with CI
   geom_hline(yintercept = 0, linetype = "dashed", color = "red") + # reference line
@@ -546,46 +532,69 @@ ggplot(Saprotrophs_alpha, aes(x = Time_since_fire_months, y = yi)) +
   theme_minimal(base_size = 14)
 ```
 
-```{r Moderators models}
-mod.firesev <-rma(yi, vi, data= Soil_samples_df)
-mod.firesev
+```{r RR effect sizes categorization}
+RR_ECM <- ordinations_df %>%
+  dplyr::filter(str_starts(Response_var, "ECM"))
+
+ECM_beta_result <- rma(RRbeta, var_RRbeta, data = RR_ECM) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(ECM_beta_result)
+
+ECM_struc_result <- rma(RRstructure, var_RRstructure, data = RR_ECM) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(ECM_beta_result)
+
+RR_Saprotroph <- ordinations_df %>%
+  dplyr::filter(str_starts(Response_var, "Saprotroph"))
+
+RR_Sporocarp <- ordinations_df %>%
+  dplyr::filter(str_starts(Response_var, "Sporocarp"))
+
+RR_all_fungi <- ordinations_df %>%
+  dplyr::filter(
+    !str_starts(Response_var, "ECM") &
+    !str_starts(Response_var, "Saprotroph") &
+    !str_starts(Response_var, "Sporocarp")
+  )
+
+All_beta_result <- rma(RRbeta, var_RRbeta, data = RR_all_fungi) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(All_beta_result)
+
+All_struc_result <- rma(RRstructure, var_RRstructure, data = RR_all_fungi) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
+summary(All_struc_result)
 ```
 
-```{r Effect sizes: RR}
+```{r Publication Bias}
+funnel(All_struc_result) #we look for symmetry
 
-ordinations_effectsizes <- Metaanalysis_dataset
+##Trim and fill analysis
+trimandfill <- trimfill(All_struc_result)
+#Estimated number of missing studies on the right side: 0 (SE = 10.2953)
+trimandfill
+funnel(trimandfill)
 
-RRstructure_df <- ordinations_effectsizes[,-37]
-RRbeta_df <- ordinations_effectsizes[,-36]
+regtest(All_struc_result)
+#Test for Funnel Plot Asymmetry: z = -6.3480, p < .0001 #This SIGNIFICANCE means our funnel plot is ASYMMETRICAL
+```
 
-#RRstructure_df$vi <- 1  # pseudo-variance
-#RRbeta_df$vi <- 1
+```{r Models: RR}
+m_beta <- rma.mv(yi  = RRbeta, V  = var_RRbeta,
+                 mods = ~Fire_severity -1, 
+                 random = ~ 1 | Study_ID,
+                 data = RR_all_fungi)
+summary(m_beta)
 
-RRstructure_multilevel <- rma.mv(yi = RRstructure,
-                        V = diag(nrow(RRstructure_df)),  # pseudo-variances
-                        random = ~ 1 | Study_ID,
-                        data = RRstructure_df,
-                        method = "REML")
-
-summary(RRstructure_multilevel)
-
-hist(RRstructure_df$RRstructure)
-boxplot(RRstructure_df$RRstructure ~ RRstructure_df$Study_ID)
-
-RRbeta_multilevel <- rma.mv(yi = RRbeta,
-                        V = diag(nrow(RRbeta_df)),  # pseudo-variances
-                        random = ~ 1 | Study_ID,
-                        data = RRbeta_df,
-                        method = "REML")
-
-summary(RRbeta_multilevel)
-
-hist(RRstructure_df$RRstructure)
-boxplot(RRstructure_df$RRstructure ~ RRstructure_df$Study_ID)
-
+m_structure <- rma.mv(yi  = RRstructure, V  = var_RRstructure,
+                 #mods = ~Fire_type-1, 
+                 random = ~ 1 | Study_ID,
+                 data = RR_all_fungi)
+summary(m_structure)
 
 ```
 
+```{r Forest plot}
+png("All_beta_result_plot.png", width = 2000, height = 3000, res = 300)
+forest.rma(ECM_struc_result, slab = RR_ECM$Study_ID, header="study")
+dev.off()
+```
 
 
 
