@@ -181,24 +181,23 @@ guild_richness_summary <- richness_per_sample %>%
     .groups = "drop"
   )
 
-vista <- guild_richness_summary %>% dplyr::filter(primary_lifestyle=="unspecified_saprotroph")
-
 ### MODELS
 richness_per_sampleTOP <- richness_per_sample %>% dplyr::filter(DEPTH=="topsoil")
 richness_per_sampleSUB <- richness_per_sample %>% dplyr::filter(DEPTH=="subsoil")
 
 glm_results <- glm(
       Richness ~ TRAT2,
-      family = poisson,
-      data = filter(richness_per_sampleTOP, primary_lifestyle == "unspecified_saprotroph"))
+      family = poisson, #negative binomial generalized linear models
+      data = filter(richness_per_sampleTOP, primary_lifestyle == "soil_saprotroph"))
+
+Anova(glm_results, type="II")
 
 performance::check_overdispersion(
   glm(Richness ~ TRAT2, family = poisson,
       data = filter(richness_per_sampleTOP,
-                    primary_lifestyle == "unspecified_saprotroph"))
+                    primary_lifestyle == "soil_saprotroph"))
 )
 
-Anova(glm_results, type="II")
 
 posthoc <- glm.nb(Richness ~ TRAT2,
                 data = filter(richness_per_sampleTOP,
@@ -208,30 +207,40 @@ posthoc <- glm.nb(Richness ~ TRAT2,
 multcomp::cld(emmeans(posthoc, ~TRAT2, type="response"), Letters=letters)
 
 ### PLOT
-selected_guilds$TRAT2 <- ordered(selected_guilds$TRAT2, levels=c("UB", "LS", "HS1", "HS2"))
-selected_guilds$DEPTH <- ordered(selected_guilds$DEPTH, levels=c("topsoil", "subsoil"))
-
 selected_guilds <- guild_richness_summary %>%
-  filter(primary_lifestyle %in% c("ectomycorrhizal", "unspecified_saprotroph", "soil_saprotroph", "litter_saprotroph"))
-  
+  dplyr::filter(primary_lifestyle %in% c("ectomycorrhizal", "unspecified_saprotroph", "soil_saprotroph", "litter_saprotroph"))
+
+selected_guilds <- selected_guilds %>%
+  dplyr::mutate(
+    MeanRichness = as.numeric(MeanRichness),
+    se = as.numeric(se)
+  )
+
+selected_guilds <- selected_guilds %>%
+  mutate(
+    TRAT2 = factor(TRAT2, levels = c("UB", "LS", "HS1", "HS2")),
+    DEPTH = factor(DEPTH, levels = c("topsoil", "subsoil"))
+  )
+
 ggplot(selected_guilds, aes(x = TRAT2, y = MeanRichness, color = primary_lifestyle, group = primary_lifestyle)) +
-  geom_point(size = 3.5, alpha=.6, position = position_dodge(width = 0.3)) +
-  scale_color_manual(values = c("#DD1C77","#8c6bb1","#6baed6", "#0570b0")) +
-  geom_line(position = position_dodge(width = 0.3)) +
-  geom_errorbar(aes(ymin = MeanRichness - SDRichness, ymax = MeanRichness + SDRichness),
+  geom_point(size = 3.5, alpha=.7, position = position_dodge(width = 0.3)) +
+  geom_line(position = position_dodge(width = 0.3), alpha=.4) +
+  geom_errorbar(aes(ymin = MeanRichness - se, ymax = MeanRichness + se),
                 width = 0.1, position = position_dodge(width = 0.3)) +
+  scale_color_manual(values = c("#DD1C77","#8c6bb1","#6baed6", "#0570b0")) +
   facet_wrap(~DEPTH) +
-  labs(x = "Fire severity", y = "Mean ASV richness", color = "Guild") +
-  theme_minimal()+
-    theme(
+  labs(x = "Fire severity", y = "Mean ASV richness ± SE", color = "Guild") +
+  theme_minimal() +
+  theme(
     panel.background = element_blank(),
     panel.border = element_rect(colour = "black", fill = NA),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 14),  # Change this value as needed
-    axis.text.y = element_text(size = 14)
-    #legend.position = "none"
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"  
   )
-#ggsave("guild_richness.png")
+ggsave("guild_richness.png", width = 5, height = 4, dpi = 300)
 
 ```
 
@@ -310,11 +319,11 @@ mine <- c("#DD1C77",
           "#9ecae1", 
           "#7F3980")
 
-ggplot(guild_rel_summary2, aes(x = TRAT2, y = graph_abun, fill = primary_lifestyle)) +
-  geom_col(position = "stack") +
+ggplot(guild_rel_summary2, aes(x = TRAT2, y = MeanRelAbund, fill = primary_lifestyle)) +
+  geom_bar(stat = "identity", position = "stack", width=.6) +  # grouped bars
   coord_flip() +
   facet_wrap(~DEPTH, nrow = 1) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(labels = scales::label_number(suffix = "%")) +
   #scale_fill_brewer(name = "Fungal guild", palette = "Dark2", na.value = "grey50")+
   #scale_fill_viridis_d(name = "Fungal guild", option = "D", na.value = "grey50", direction = -1) +
   scale_fill_manual(values=mine, na.value = "grey60") +
@@ -328,13 +337,16 @@ ggplot(guild_rel_summary2, aes(x = TRAT2, y = graph_abun, fill = primary_lifesty
     panel.grid = element_blank(),
     panel.grid.minor = element_blank(),
     axis.line = element_line(),
+    axis.ticks = element_line(color = "black"),
     strip.background = element_blank(),  # Remove strip background
     axis.text.x = element_text(angle = 0.1, hjust = 1),  # Rotate x-axis labels
     panel.background = element_blank(),  # Remove panel background color
     plot.background = element_blank(),   # Remove plot background color
-    #legend.position = "none"             # Remove legend
+    legend.position = "none"             # Remove legend
   )
-#ggsave("stacked_guilds.png")
+#ggsave("stacked_guilds5.png", width = 8, height = 5, dpi = 300)
+
+
 ```
 
 ```{r}
@@ -370,9 +382,10 @@ vista <- df_rel %>% dplyr::filter(Genus=="Linnemannia")
 guild_rel_TOP <- guild_rel %>% dplyr::filter(DEPTH=="topsoil")
 guild_rel_SUB <- guild_rel %>% dplyr::filter(DEPTH=="subsoil")
 
-lm_results <- lm(RelAbund ~ TRAT2, data = guild_rel_TOP %>% dplyr::filter(primary_lifestyle=="unspecified_saprotroph")) 
+lm_results <- lm(RelAbund ~ TRAT2, data = guild_rel_TOP %>% dplyr::filter(primary_lifestyle=="soil_saprotroph")) 
 anova(lm_results)
 emm <- emmeans(lm_results, pairwise ~ TRAT2)
+emm
 
 cld_results <- cld(emm$emmeans, Letters = letters)
 cld_results

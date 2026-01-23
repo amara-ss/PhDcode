@@ -15,7 +15,7 @@ The code is structured in the same order as the results of the article
 
 ```{r Packages}
 #install.packages("pacman")
-pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "lmerTest", "emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "vegan", "hrbrthemes", "indicspecies", "GGally", "rpart", "rpart.plot", "irr", "evtree", "randomForest", "rfPermute", "devtools")
+pacman::p_load("ggplot2","tidyr","dplyr","tidyverse","readxl","pastecs","lattice","forcats","corrgram","corrplot","HH","effects","car","multcompView","lme4", "lmerTest", "emmeans","factoextra","ggfortify","RColorBrewer","MuMIn","scales","multifunc", "ggthemes", "knitr", "vegan", "hrbrthemes", "indicspecies", "randomForest", "rfPermute", "devtools")
 #install.packages("remotes")
 remotes::install_github("easystats/insight")
 remotes::install_github("easystats/performance")
