@@ -24,6 +24,7 @@ if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
 BiocManager::install("EBImage")
+devtools::install_github("daniel1noble/orchaRd", ref = "main", force = TRUE)
 ```
 
 ```{r Read dataset}
@@ -204,6 +205,7 @@ SD_Db
 
 ```{r Databases}
 means_df <- Metaanalysis_dataset
+nrow(means_df) #total number of effect sizes
 
 ordinations_df <- Metaanalysis_dataset #ordination_data
 ```
@@ -219,7 +221,7 @@ unique_coordinates <- df_unique %>%
 
 ```{r Descriptive statistics}
 means_df %>%
-  dplyr::count(Forest_type) %>%
+  dplyr::count(effect_size) %>%
   arrange(desc(n))
 
 means_df$effect_size <- ordered(means_df$effect_size, levels=c("hedges_g", "RR", "logRR"))
@@ -272,9 +274,10 @@ ggplot(df_unique, aes(x = Study_Year)) +
    └─ Climatic region / biome
 
 3. Response variables (what we evaluate)
-   ├─ Abundance/richness
-   ├─ Diversity α / β
+   ├─ Richness
+   ├─ Diversity β
    ├─ % colonization
+   ├─ Fructification
 
 We are going to use the *metafor* package.
 
@@ -308,6 +311,57 @@ Effectsizes <- escalc(measure="SMD", m1i = Burnt_value, sd1i = Burnt_SD, n1i = N
 #Our study with Hedge's d effect sizes is based on *315* entries
 ```
 
+```{r RQ1: Effects of fire on soil fungal richness, community composition, colonization per}
+
+n_studies <- Saprotrophs_richness %>%
+  dplyr::distinct(Study_ID, .keep_all = TRUE)
+
+All_fungi_richness <- Effectsizes %>%
+  dplyr::filter(Response_var %in% c("Richness", "Chao1"))
+
+All_fungi_richness_cut <- Effectsizes %>%
+  dplyr::filter(
+    Response_var %in% c("Richness", "Chao1"),
+    !Study_ID %in% c(238, 210))  # remove these studies
+  
+ECM_richness <- Effectsizes %>%
+  dplyr::filter(Response_var=="ECM_Richness")
+
+Saprotrophs_richness <- Effectsizes %>%
+  dplyr::filter(Response_var %in% c("Saprotroph_richness", "Wood_saprotroph_richness"))
+
+#Model
+multilevel <- rma.mv(yi = yi, V = vi, 
+                                  random = ~ 1 | Study_ID/Sample_type, #With this structure we indicate NESTED random effect
+                                  data = Saprotrophs_richness)
+summary(multilevel)
+
+multilevel_mod <- rma.mv(
+  yi = yi,
+  V = vi,
+  mods = ~ Fire_type,           # fixed effect / moderator
+  random = ~ 1 | Study_ID/Sample_type,
+  data = Saprotrophs_richness)
+summary(multilevel_mod)
+
+#Forest plot --> INDIVIDUAL EFFECT SIZES
+forest.rma(All_richness_multilevel, slab = All_fungi_richness_cut$Study_ID, header="study")
+
+#Orchard plot
+orchaRd:: orchard_plot(multilevel, mod = "1",
+  group="Study_ID", alpha = 0.5, xlab="Hedge's g")+
+  #annotate(geom="text", x= 0.80, y= 1, label= paste0("italic(I)^{2} == ", round(I2[1],4), "*\"%\""), 
+  scale_fill_manual(values="#dd3497")+
+  scale_colour_manual(values="#dd3497")
+
+
+# We can visualise the results of the meta-analysis using a caterpillar plot
+orchaRd::caterpillars(All_richness_multilevel, mod="1", 
+                      xlab = "Effect size (Hedge's g)",group="Study_ID",
+                      colpoint = "grey30",colerrorbar = "#ae017e")
+
+```
+
 ```{r Random/Mixed Effects models}
 random_result <- rma(yi, vi, data = Effectsizes) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
 summary(random_result)
@@ -321,22 +375,12 @@ Here we computed all effect sizes together... But we should not mix saprotroph r
 
 ```{r Hedges'g effect sizes categorization}
 
-All_fungi_richness <- Effectsizes %>%
-  dplyr::filter(Response_var=="Richness")
-
-All_fungi_result <- rma(yi, vi, data = All_fungi_richness) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
-summary(All_fungi_result)
-
-ECM_richness <- Effectsizes %>%
-  dplyr::filter(Response_var=="ECM_Richness")
-
 ECM_col <- Effectsizes %>%
   dplyr::filter(Response_var == "Colonization_per")
 ECM_result <- rma(yi, vi, data = ECM_col) #yi = EFFECT SIZE; vi = VARIANCE OF THE EFFECT SIZE
 summary(ECM_result)
 
-Saprotrophs_richness <- Effectsizes %>%
-  dplyr::filter(Response_var=="Saprotroph_richness")
+
 
 Sporocarps_abun <- Effectsizes %>%
   dplyr::filter(Response_var == "Sporocarp_Abundance")

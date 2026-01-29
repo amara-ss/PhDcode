@@ -188,7 +188,7 @@ richness_per_sampleSUB <- richness_per_sample %>% dplyr::filter(DEPTH=="subsoil"
 glm_results <- glm(
       Richness ~ TRAT2,
       family = poisson, #negative binomial generalized linear models
-      data = filter(richness_per_sampleTOP, primary_lifestyle == "soil_saprotroph"))
+      data = filter(richness_per_sampleTOP, primary_lifestyle == "ectomycorrhizal"))
 
 Anova(glm_results, type="II")
 
